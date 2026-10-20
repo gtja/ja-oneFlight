@@ -1,0 +1,37 @@
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+*.local
+.local/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Build output and dependency caches
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+/output/
+/tmp/
+backend/target/
+backend/data/
+backend/uploads/
+data/
+uploads/
+artifacts/
+服务器部署包/
+backups/
+playwright-report/
+test-results/
+
+# Credentials and local integration material
+*.pem
+*.key
+*.p12
+*.jks
+private/

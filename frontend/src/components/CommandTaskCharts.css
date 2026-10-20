@@ -1,0 +1,122 @@
+.command-task-chart {
+  overflow: visible;
+  isolation: isolate;
+}
+.command-task-chart .command-task-chart-grid {
+  stroke: #8cb8d51c;
+  stroke-dasharray: 2 6;
+}
+.command-task-chart .command-task-chart-label {
+  fill: #90abba;
+  font-size: 10px;
+  font-family: inherit;
+  pointer-events: none;
+}
+.command-task-chart-target {
+  cursor: pointer;
+  outline: none;
+}
+.command-task-chart-hit {
+  fill: #79c2dc;
+  fill-opacity: 0;
+  stroke: #8ad9ed;
+  stroke-opacity: 0;
+  stroke-width: 0.8;
+  transition:
+    fill-opacity 160ms ease,
+    stroke-opacity 160ms ease;
+  pointer-events: all;
+}
+.command-task-chart-target.is-highlighted .command-task-chart-hit {
+  fill-opacity: 0.055;
+}
+.command-task-chart-target.is-selected .command-task-chart-hit {
+  fill-opacity: 0.09;
+  stroke-opacity: 0.25;
+}
+.command-task-chart-target:focus-visible .command-task-chart-hit {
+  fill-opacity: 0.1;
+  stroke-opacity: 0.75;
+}
+.command-task-chart-guide {
+  stroke: #96d5e8;
+  stroke-opacity: 0;
+  stroke-dasharray: 3 4;
+  pointer-events: none;
+  transition: stroke-opacity 160ms ease;
+}
+.command-task-chart-target.is-highlighted .command-task-chart-guide,
+.command-task-chart-target.is-selected .command-task-chart-guide {
+  stroke-opacity: 0.45;
+}
+.command-task-chart-halo {
+  fill: #7dd3e9;
+  fill-opacity: 0;
+  pointer-events: none;
+  transition: fill-opacity 160ms ease;
+}
+.command-task-chart-target.is-highlighted .command-task-chart-halo,
+.command-task-chart-target.is-selected .command-task-chart-halo {
+  fill-opacity: 0.19;
+}
+.command-task-chart-dot {
+  fill: #97d4ec;
+  pointer-events: none;
+  transition: fill 160ms ease;
+}
+.command-task-chart-target.is-highlighted .command-task-chart-dot,
+.command-task-chart-target.is-selected .command-task-chart-dot {
+  fill: #d1f5ff;
+}
+.command-task-chart-rail {
+  fill: #88cce2;
+  fill-opacity: 0.035;
+  pointer-events: none;
+}
+.command-task-chart-bar {
+  opacity: 0.88;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+.command-task-chart-target.is-highlighted .command-task-chart-bar,
+.command-task-chart-target.is-selected .command-task-chart-bar {
+  opacity: 1;
+}
+.command-task-chart .command-task-chart-bar-count {
+  fill: #a8c9dd;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.command-task-chart .command-task-chart-empty {
+  fill: #9cb7c9;
+  font-size: 12px;
+}
+.command-task-chart-tooltip {
+  pointer-events: none;
+  filter: drop-shadow(0 5px 8px #00101d66);
+}
+.command-task-chart-tooltip > rect {
+  fill: #102738f5;
+  stroke: #7ab4cc80;
+  stroke-width: 0.8;
+}
+.command-task-chart .command-task-chart-tooltip-title {
+  fill: #aec7d7;
+  font-size: 10px;
+}
+.command-task-chart .command-task-chart-tooltip-count {
+  fill: #d7f3fc;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.command-task-chart .command-task-chart-tooltip-hint {
+  fill: #84c9db;
+  font-size: 9px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .command-task-chart * {
+    transition: none;
+  }
+}

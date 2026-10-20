@@ -1,0 +1,268 @@
+.board .flight-sim-controls {
+  position: absolute;
+  z-index: 5;
+  top: calc(var(--board-top, 170px) + 10px);
+  left: calc(var(--board-left, 280px) + 14px);
+  right: calc(var(--board-right, 280px) + 14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  width: fit-content;
+  max-width: calc(
+    100% - var(--board-left, 280px) - var(--board-right, 280px) - 28px
+  );
+  margin: 0 auto;
+  padding: 6px 8px;
+  border: 1px solid #3e7f9b99;
+  border-radius: 8px;
+  color: #d7f1fb;
+  background: linear-gradient(130deg, #193a4bee, #102532ed 70%);
+  box-shadow:
+    0 6px 22px #0007,
+    inset 0 1px 0 #8beaff0c;
+  backdrop-filter: blur(8px);
+  font-size: 11px;
+  line-height: 1.3;
+  pointer-events: auto;
+}
+.board .flight-sim-controls button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  height: 27px;
+  padding: 3px 7px;
+  border: 1px solid #507c8f66;
+  border-radius: 5px;
+  background: #183541;
+  color: #b9dce8;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    translate 120ms ease;
+}
+.board .flight-sim-controls button:hover:not(:disabled),
+.board .flight-sim-controls button.active {
+  border-color: #50d9f8b3;
+  background: #174659;
+  color: #edfcff;
+  box-shadow:
+    inset 0 1px 0 #b0f2ff18,
+    0 2px 8px #020f1940;
+}
+.board .flight-sim-controls button:active:not(:disabled) {
+  translate: 0 1px;
+}
+.board .flight-sim-controls button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.board .flight-sim-controls button:focus-visible,
+.board .flight-sim-selector .select-control__trigger:focus-visible,
+.board .flight-simulation-aircraft:focus-visible {
+  outline: 2px solid #b3f4ff;
+  outline-offset: 3px;
+}
+.board .flight-sim-live {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 3px;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+.board .flight-sim-live i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #43efb4;
+  box-shadow: 0 0 8px #43efb4b3;
+  animation: flight-live-breathe 3.2s ease-in-out infinite;
+}
+.board .flight-sim-live.stopped i {
+  background: #f2c374;
+  box-shadow: none;
+  animation: none;
+}
+.board .flight-sim-live b {
+  color: #6de0ff;
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+}
+.board .flight-sim-selector {
+  display: block;
+  min-width: 0;
+}
+.board .flight-sim-selector .select-control__trigger {
+  height: 27px;
+  min-height: 0;
+  width: 132px;
+  padding: 3px 17px 3px 7px;
+  border: 1px solid #507c8f66;
+  border-radius: 5px;
+  color: #d0eaf5;
+  background-color: #142d3a;
+  font-size: 10px;
+  cursor: pointer;
+}
+.board .flight-sim-selector .select-control {
+  width: 132px;
+}
+.board .flight-sim-selector .select-control__trigger {
+  justify-content: space-between;
+  gap: 5px;
+}
+.board .flight-sim-controls .flight-sim-power {
+  color: #8cbdcf;
+  background: transparent;
+}
+.board .flight-sim-controls.collapsed {
+  width: fit-content;
+  padding: 4px;
+}
+.board .flight-sim-status {
+  flex-basis: 100%;
+  min-width: 0;
+  padding-top: 3px;
+  border-top: 1px solid #92ccdf14;
+  color: #91b8c9;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board .flight-sim-controls.collapsed .flight-sim-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  clip-path: inset(50%);
+}
+.board .flight-sim-error {
+  color: #f4c778;
+}
+.board .flight-simulation-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+.board .flight-simulation-aircraft {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 100px;
+  padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, var(--aircraft-color) 55%, transparent);
+  border-left: 2px solid var(--aircraft-color);
+  border-radius: 6px;
+  background: #0a202cdb;
+  color: #e7faff;
+  box-shadow: 0 3px 14px #0008;
+  text-align: left;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.board .flight-simulation-aircraft:hover,
+.board .flight-simulation-aircraft:focus-visible {
+  z-index: 2;
+  border-color: var(--aircraft-color);
+  background-color: #143749f5;
+  box-shadow:
+    0 4px 18px #0008,
+    0 0 14px color-mix(in srgb, var(--aircraft-color) 18%, transparent);
+}
+.board .flight-simulation-aircraft[hidden] {
+  display: none;
+}
+.board .flight-simulation-aircraft strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--aircraft-color);
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+}
+.board .flight-simulation-aircraft small {
+  color: #bdd7e3;
+  font:
+    9px/1.25 ui-monospace,
+    monospace;
+}
+.board .flight-simulation-aircraft.selected {
+  z-index: 1;
+  border-color: var(--aircraft-color);
+  background: #123747ed;
+  box-shadow:
+    0 4px 16px #0006,
+    0 0 18px color-mix(in srgb, var(--aircraft-color) 22%, transparent);
+}
+.board .flight-simulation-aircraft.selected strong::after {
+  content: "已选";
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--aircraft-color) 36%, transparent);
+  border-radius: 3px;
+  color: #d5f4ff;
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@keyframes flight-live-breathe {
+  50% {
+    opacity: 0.65;
+    box-shadow: 0 0 4px #43efb466;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board .flight-sim-controls button,
+  .board .flight-simulation-aircraft {
+    transition: none;
+  }
+  .board .flight-sim-live i {
+    animation: none;
+  }
+}
+@media (max-width: 1280px) {
+  .board .flight-sim-controls {
+    gap: 4px;
+    padding: 5px 6px;
+  }
+  .board .flight-sim-live {
+    display: none;
+  }
+  .board .flight-sim-controls button {
+    padding: 3px 5px;
+    font-size: 9px;
+  }
+  .board .flight-sim-selector .select-control,
+  .board .flight-sim-selector .select-control__trigger {
+    width: 116px;
+    font-size: 9px;
+  }
+  .board .flight-simulation-aircraft {
+    min-width: 88px;
+    padding: 5px 7px;
+  }
+}

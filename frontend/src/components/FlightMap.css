@@ -1,0 +1,251 @@
+.drawing-waypoint {
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid #e8fcff;
+  border-radius: 50%;
+  background: #146987;
+  color: #fff;
+  font:
+    700 12px/1 ui-monospace,
+    monospace;
+  box-shadow:
+    0 0 0 3px #082530b3,
+    0 2px 10px #0009;
+  cursor: grab;
+}
+.drawing-waypoint.first {
+  background: #15745c;
+}
+.drawing-waypoint.last {
+  background: #a26024;
+}
+.drawing-waypoint.selected {
+  z-index: 2;
+  background: #2e91d5;
+  border-color: #fff;
+  box-shadow:
+    0 0 0 5px #67dfff66,
+    0 2px 12px #0009;
+}
+.drawing-waypoint:focus-visible {
+  outline: 3px solid #ffc56b;
+  outline-offset: 4px;
+}
+.drawing-waypoint:active {
+  cursor: grabbing;
+}
+.flight-map-editing .map-tools {
+  flex-wrap: wrap;
+  max-width: calc(100% - 24px);
+  right: 12px;
+  top: 12px;
+}
+.flight-map-editing .map-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.map-building-status {
+  position: absolute;
+  left: 12px;
+  bottom: 25px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  color: #c7d4de;
+  background: #182f3be6;
+  border: 1px solid #47616d;
+  border-radius: 4px;
+  font-size: 10px;
+  pointer-events: none;
+  max-width: calc(100% - 24px);
+}
+.flight-map-editing .map-failure {
+  bottom: 56px;
+  max-width: calc(100% - 24px);
+}
+
+.route-elevated-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.route-elevated-waypoint {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: none;
+}
+.route-elevated-waypoint[hidden] {
+  display: none;
+}
+.route-elevated-label {
+  position: absolute;
+  left: 33px;
+  top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 24px;
+  padding: 6px 7px;
+  border: 1px solid #a2faddb3;
+  border-radius: 4px;
+  background: #062820f2;
+  color: #f2fff9;
+  font:
+    700 11px/1 ui-monospace,
+    monospace;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+  box-shadow: 0 2px 6px #0009;
+  pointer-events: auto;
+}
+.route-elevated-height {
+  padding-left: 7px;
+  border-left: 1px solid #96e9c86b;
+  color: #b9eddb;
+  font-style: normal;
+  font-weight: 500;
+}
+.route-elevated-height[hidden] {
+  display: none;
+}
+.route-elevated-waypoint[data-label-visible="false"] .route-elevated-label {
+  visibility: hidden;
+}
+.route-elevated-waypoint.selected {
+  z-index: 2;
+}
+.route-elevated-waypoint.selected .route-elevated-label {
+  border-color: #ffd084;
+  background: #3d2c12f2;
+  color: #fff1c6;
+  box-shadow:
+    0 0 0 2px #ffc66033,
+    0 2px 8px #0009;
+}
+.route-elevated-waypoint.selected .route-elevated-height {
+  border-left-color: #ffd08480;
+  color: #ffe2a4;
+}
+.route-elevated-waypoint:focus-visible {
+  outline: 2px solid #ffd084;
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.route-elevated-waypoint:active {
+  cursor: grabbing;
+}
+
+.flight-map .map-marker {
+  z-index: 1;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 5px;
+  outline-offset: 2px;
+  /* MapLibre updates the element transform while panning; only its children animate. */
+  transition: none;
+}
+.flight-map .map-marker[aria-disabled="true"] {
+  cursor: default;
+}
+.flight-map .map-marker > span,
+.flight-map .map-marker > small {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+.flight-map .map-marker:is(:hover, :focus-visible, .selected) > span {
+  background: #205a70f2;
+  border-color: #b6f0ff;
+  box-shadow:
+    0 0 0 4px #82d9ee26,
+    0 2px 12px #07182499;
+  color: #e4faff;
+}
+.flight-map .map-marker:is(:hover, :focus-visible, .selected) > small {
+  background: #153d51f5;
+  border-color: #71c9e1;
+  color: #edfaff;
+}
+.flight-map .map-marker.selected {
+  z-index: 2;
+}
+.flight-map .map-marker.selected > small::after {
+  content: " · 已选";
+  font-size: 9px;
+  color: #82dce9;
+}
+.flight-map .map-geometry-marker > span {
+  border-radius: 5px;
+  width: 22px;
+  height: 22px;
+}
+.flight-map .map-marker:focus-visible,
+.flight-map .map-tools button:focus-visible {
+  outline: 2px solid #a5e8fa;
+  outline-offset: 3px;
+}
+.flight-map .map-tools button {
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+.flight-map .map-tools button:hover:not(:disabled) {
+  background: #2f5169;
+  border-color: #6eb8d7;
+  color: #d7f2ff;
+}
+.flight-map .map-tools button:disabled {
+  cursor: default;
+}
+.map-object-tooltip {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 4px;
+  max-width: 240px;
+  padding: 9px 12px;
+  border: 1px solid #609bb8a6;
+  border-radius: 6px;
+  color: #e3f5ff;
+  background: #102d40f5;
+  box-shadow: 0 6px 22px #03101f66;
+  transform: translate(14px, calc(-100% - 12px));
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.map-object-tooltip strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.map-object-tooltip span {
+  color: #91bacf;
+  font-size: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flight-map .map-marker > span,
+  .flight-map .map-marker > small,
+  .flight-map .map-tools button {
+    transition: none;
+  }
+}

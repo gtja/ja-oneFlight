@@ -1,0 +1,93 @@
+name: ${COMPOSE_PROJECT_NAME:-oneflight}
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-oneflight}
+      MYSQL_USER: ${DB_USERNAME:-oneflight}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Run scripts/init-env.sh or configure DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Configure MYSQL_ROOT_PASSWORD}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h localhost -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+
+  backend:
+    image: oneflight-api:${APP_VERSION:-1.0.0}
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-oneflight}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      DB_USERNAME: ${DB_USERNAME:-oneflight}
+      DB_PASSWORD: ${DB_PASSWORD:?Configure DB_PASSWORD}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?Configure BOOTSTRAP_ADMIN_PASSWORD}
+      BOOTSTRAP_ADMIN_DISPLAY_NAME: ${BOOTSTRAP_ADMIN_DISPLAY_NAME:-平台管理员}
+      UPLOAD_DIRECTORY: /app/uploads
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      MAP_STYLE_URL: ${MAP_STYLE_URL:-https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json}
+      MAP_SATELLITE_URL: ${MAP_SATELLITE_URL:-}
+      MAP_TERRAIN_URL: ${MAP_TERRAIN_URL:-}
+      SOURCE_GATEWAY_ORIGIN: ${SOURCE_GATEWAY_ORIGIN:-https://dushu.jing-an.com:32716}
+      SOURCE_GATEWAY_SYSTEM: ${SOURCE_GATEWAY_SYSTEM:-jingqi}
+      SOURCE_TARGET_HOST: ${SOURCE_TARGET_HOST:-47.96.225.165:32716}
+      SOURCE_TOKEN: ${SOURCE_TOKEN:-}
+      SOURCE_USERNAME: ${SOURCE_USERNAME:-}
+      SOURCE_DUSHU_JDBC_URL: ${SOURCE_DUSHU_JDBC_URL:-jdbc:mysql://47.96.225.165:31306/dushu}
+      SOURCE_DUSHU_USERNAME: ${SOURCE_DUSHU_USERNAME:-}
+      SOURCE_DUSHU_PASSWORD: ${SOURCE_DUSHU_PASSWORD:-}
+      SOURCE_ICOS_JDBC_URL: ${SOURCE_ICOS_JDBC_URL:-jdbc:mysql://47.96.225.165:31306/chingchi-icos}
+      SOURCE_ICOS_USERNAME: ${SOURCE_ICOS_USERNAME:-}
+      SOURCE_ICOS_PASSWORD: ${SOURCE_ICOS_PASSWORD:-}
+      SOURCE_IDENTITY_JDBC_URL: ${SOURCE_IDENTITY_JDBC_URL:-}
+      SOURCE_IDENTITY_USERNAME: ${SOURCE_IDENTITY_USERNAME:-}
+      SOURCE_IDENTITY_PASSWORD: ${SOURCE_IDENTITY_PASSWORD:-}
+      SOURCE_MQTT_URL: ${SOURCE_MQTT_URL:-tcp://47.96.225.165:31883}
+      SOURCE_MQTT_USERNAME: ${SOURCE_MQTT_USERNAME:-}
+      SOURCE_MQTT_PASSWORD: ${SOURCE_MQTT_PASSWORD:-}
+      SOURCE_ALGORITHM_ORIGIN: ${SOURCE_ALGORITHM_ORIGIN:-http://47.111.155.82:32052}
+      SOURCE_TIMEOUT_SECONDS: ${SOURCE_TIMEOUT_SECONDS:-8}
+    volumes:
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  frontend:
+    image: oneflight-web:${APP_VERSION:-1.0.0}
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8088}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql-data:
+  uploads:

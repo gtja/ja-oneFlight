@@ -1,0 +1,739 @@
+.modal.spatial-resource-modal {
+  width: min(1640px, calc(100vw - 48px));
+  max-width: none;
+  height: calc(100dvh - 48px);
+  max-height: 980px;
+}
+.spatial-resource-modal > .modal-body {
+  flex: 1;
+  overflow: hidden;
+  padding: 18px;
+}
+.spatial-resource-modal .modal-body > div,
+.spatial-resource-form {
+  height: 100%;
+  min-height: 0;
+}
+.spatial-resource-form {
+  display: flex;
+  flex-direction: column;
+}
+.spatial-resource-form > .form-grid {
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(230px, 270px) minmax(0, 1fr);
+  grid-template-rows: repeat(5, min-content) minmax(0, 1fr);
+  column-gap: 20px;
+  overflow: auto;
+}
+.spatial-resource-form > .form-grid > .field:not(.spatial-field) {
+  grid-column: 1;
+}
+.spatial-resource-form > .form-grid > .field.spatial-field {
+  grid-column: 2;
+  grid-row: 1 / span 6;
+  min-height: 0;
+}
+.spatial-resource-form .field textarea {
+  min-height: 72px;
+  max-height: 150px;
+}
+.spatial-resource-form > .form-footer {
+  margin-top: 14px;
+  flex: none;
+}
+.spatial-field > .geometry-input {
+  flex: 1;
+  min-height: 0;
+}
+.geometry-input {
+  border-color: #38566b;
+  border-radius: 8px;
+  background: #142530;
+}
+.geometry-workspace {
+  height: 100%;
+  min-height: 450px;
+  display: flex;
+  flex-direction: column;
+}
+.geometry-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #1b303f;
+  border-bottom: 1px solid #354e60;
+  flex: none;
+}
+.geometry-workspace
+  :where(
+    button:not(.drawing-waypoint):not(.route-elevated-waypoint):not(
+        .maplibregl-ctrl-attrib-button
+      )
+  ) {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #3b576a;
+  background: #203644;
+  color: #b9ccd9;
+  border-radius: 5px;
+  padding: 7px 9px;
+  font-size: 11px;
+}
+.geometry-workspace
+  :where(
+    button:hover:not(:disabled):not(.drawing-waypoint):not(
+        .route-elevated-waypoint
+      ):not(.maplibregl-ctrl-attrib-button)
+  ) {
+  background: #29485d;
+  color: #e6f3ff;
+  border-color: #6093b8;
+}
+.geometry-workspace button:focus-visible {
+  outline: 2px solid #7eb9f2;
+  outline-offset: 2px;
+}
+.geometry-workspace button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.geometry-modes {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: #132631;
+  border: 1px solid #354e60;
+  border-radius: 6px;
+}
+.geometry-modes button {
+  border-color: transparent;
+  background: transparent;
+  padding: 6px 8px;
+}
+.geometry-modes button.active {
+  background: #2c5270;
+  border-color: #5485a9;
+  color: #dceeff;
+}
+.geometry-toolbar-stats {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #97afc0;
+  font-size: 10px;
+  margin-left: auto;
+}
+.geometry-toolbar-stats strong {
+  color: #d1e5f4;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.geometry-toolbar-stats i {
+  height: 12px;
+  width: 1px;
+  background: #3d5667;
+  margin: 0 5px;
+}
+.geometry-editor-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+}
+.geometry-stage {
+  min-width: 0;
+  min-height: 320px;
+  position: relative;
+  overflow: hidden;
+}
+.geometry-stage .map-tools {
+  top: 12px;
+  right: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 24px);
+}
+.geometry-map-instruction {
+  pointer-events: none;
+  position: absolute;
+  top: 61px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #d2e3ed;
+  background: #132733dc;
+  border: 1px solid #3a5566;
+  border-radius: 5px;
+  padding: 7px 10px;
+  max-width: calc(100% - 24px);
+}
+.geometry-stage .map-camera-mode {
+  position: absolute;
+  top: 61px;
+  right: 12px;
+  z-index: 2;
+  padding: 7px 10px;
+  border: 1px solid #42736a;
+  border-radius: 5px;
+  color: #a7e7d3;
+  background: #132e2bdc;
+  font-size: 10px;
+  pointer-events: none;
+}
+.geometry-legend {
+  pointer-events: none;
+  position: absolute;
+  left: 12px;
+  bottom: 64px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #d1e0e8;
+  background: #122633e8;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 9px;
+}
+.geometry-legend span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #58d9aa;
+  margin-left: 7px;
+}
+.geometry-legend span:first-child {
+  margin-left: 0;
+}
+.geometry-legend span.end {
+  background: #ffc66c;
+}
+.geometry-legend span.line {
+  height: 3px;
+  width: 19px;
+  border-radius: 2px;
+  background: #1be6a8;
+}
+.geometry-legend span.ground-line {
+  width: 18px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed #e7f3ef;
+  background: none;
+}
+.geometry-legend span.height-line {
+  width: 0;
+  height: 12px;
+  border-radius: 0;
+  border-left: 2px dashed #fff;
+  background: none;
+}
+.geometry-space-aids {
+  padding: 9px 12px;
+  border-bottom: 1px solid #354e60;
+  background: #173137;
+}
+.geometry-space-aids > summary {
+  cursor: pointer;
+  color: #a3c6ba;
+  font-size: 10px;
+}
+.geometry-space-aids > summary > span {
+  float: right;
+  color: #79a295;
+  font-size: 9px;
+}
+.geometry-space-aids > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 10px;
+}
+.geometry-height-plan > small.geometry-terrain-note {
+  color: #c9b986;
+  line-height: 1.7;
+}
+.geometry-workspace .geometry-space-aids button {
+  background: transparent;
+  border-color: transparent;
+  padding: 5px 7px;
+  font-size: 10px;
+  color: #92aaa7;
+}
+.geometry-workspace .geometry-space-aids button[aria-pressed="true"] {
+  color: #c8f8e5;
+  border-color: #42796c;
+  background: #234d42;
+}
+.geometry-height-plan > small.geometry-view-hint {
+  color: #a1c3d7;
+  line-height: 1.7;
+  margin-top: 9px;
+}
+.geometry-altitude-badge {
+  pointer-events: none;
+  position: absolute;
+  left: 12px;
+  bottom: 102px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: calc(100% - 24px);
+  padding: 7px 10px;
+  border: 1px solid #377064;
+  border-radius: 5px;
+  color: #a8e7d2;
+  background: #122b2be8;
+  font-size: 10px;
+}
+.geometry-altitude-badge > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #23e6aa;
+}
+.geometry-altitude-badge > small {
+  flex-basis: 100%;
+  color: #c7b888;
+  font-size: 9px;
+  padding-left: 12px;
+}
+.geometry-height-plan {
+  padding: 11px 12px;
+  border-bottom: 1px solid #354e60;
+  background: #173137;
+}
+.geometry-height-plan > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.geometry-height-plan strong {
+  color: #bceadd;
+  font-size: 11px;
+}
+.geometry-height-plan > div > span {
+  font-size: 9px;
+  color: #8aafa5;
+}
+.geometry-height-plan > label {
+  display: block;
+  font-size: 9px;
+  color: #a0bdb5;
+  margin-bottom: 6px;
+}
+.geometry-height-batch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.geometry-height-batch > input,
+.geometry-point-height > input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #446c69;
+  border-radius: 4px;
+  background: #112930;
+  color: #c8ede4;
+  font:
+    12px ui-monospace,
+    monospace;
+}
+.geometry-height-batch > button {
+  flex: none;
+  color: #a2e8ce;
+  background: #255347;
+  border-color: #4a8875;
+  padding: 8px;
+}
+.geometry-height-plan > small {
+  display: block;
+  color: #81aaa0;
+  font-size: 9px;
+  margin-top: 7px;
+}
+.geometry-height-plan ~ .geometry-waypoints {
+  max-height: 160px;
+}
+.expanded .geometry-height-plan ~ .geometry-waypoints {
+  max-height: min(28vh, 300px);
+}
+.geometry-waypoints .geometry-waypoint-height {
+  color: #7cddba;
+  font:
+    10px ui-monospace,
+    monospace;
+}
+.geometry-point-height {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+.geometry-point-height > label {
+  font-size: 10px;
+  color: #a0d3c2;
+}
+.geometry-point-height > small {
+  color: #849eab;
+  font-size: 9px;
+  line-height: 1.7;
+}
+.geometry-sidebar {
+  border-left: 1px solid #354e60;
+  background: #192d3a;
+  overflow-y: auto;
+  min-width: 0;
+}
+.geometry-sidebar-title {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 13px 12px;
+  color: #abcbe1;
+  font-size: 11px;
+  border-bottom: 1px solid #314958;
+}
+.geometry-sidebar-title > span {
+  margin-left: auto;
+  color: #819dac;
+  font-size: 10px;
+}
+.geometry-waypoints {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 225px;
+  min-height: 100px;
+  overflow: auto;
+}
+.expanded .geometry-waypoints {
+  max-height: min(35vh, 360px);
+}
+.geometry-waypoints li {
+  margin: 0;
+}
+.geometry-waypoints li > button {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border-color: transparent;
+  background: transparent;
+  padding: 9px 7px;
+  gap: 9px;
+}
+.geometry-waypoints li > button.selected {
+  background: #25475d;
+  border-color: #5085aa;
+}
+.geometry-waypoints b {
+  border: 1px solid #68b9d7;
+  background: #224559;
+  color: #bcf0ff;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  flex: none;
+}
+.geometry-waypoints b.start {
+  border-color: #65c9a5;
+  background: #214e43;
+  color: #b4f0d9;
+}
+.geometry-waypoints b.end {
+  border-color: #dbb465;
+  background: #4e4430;
+  color: #ffe1a3;
+}
+.geometry-waypoints li > button > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.geometry-waypoints strong {
+  color: #d0e1ec;
+  font-size: 11px;
+  font-weight: 500;
+}
+.geometry-waypoints small {
+  font:
+    9px ui-monospace,
+    monospace;
+  color: #8faebe;
+  letter-spacing: -0.2px;
+}
+.geometry-waypoints em {
+  margin-left: 6px;
+  font-size: 8px;
+  color: #9faec9;
+  font-style: normal;
+}
+.geometry-related-name {
+  color: #91cbdc;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+.geometry-no-points {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 30px 8px;
+  color: #6f8d9e;
+}
+.geometry-no-points span {
+  font-size: 10px;
+}
+.geometry-point-detail,
+.geometry-building-detail {
+  padding: 13px 12px;
+  border-top: 1px solid #354c5c;
+}
+.geometry-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #aec8db;
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+.geometry-section-title > button {
+  margin-left: auto;
+  padding: 3px 5px;
+  background: transparent;
+  border: 0;
+  color: #b9a7ac;
+  font-size: 10px;
+}
+.geometry-coordinates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.geometry-coordinates label {
+  display: grid;
+  gap: 6px;
+  font-size: 9px;
+  color: #90aebf;
+  min-width: 0;
+}
+.geometry-coordinates input {
+  padding: 7px 6px !important;
+  font:
+    10px ui-monospace,
+    monospace;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid #40576a;
+  border-radius: 4px;
+  background: #122530;
+  color: #d3e4ef;
+}
+.geometry-coordinate-error {
+  font-size: 10px;
+  color: #f3a3a7;
+  margin: 9px 0 0;
+}
+.geometry-associated {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: #9fd7c6;
+  font-size: 10px;
+  margin-top: 12px;
+}
+.geometry-associated > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.geometry-associated > button {
+  border: 0;
+  background: none;
+  padding: 2px;
+  font-size: 9px;
+}
+.geometry-building-detail h4 {
+  font-size: 12px;
+  margin: 0 0 11px;
+  color: #d5e7f0;
+  overflow-wrap: anywhere;
+}
+.geometry-building-detail dl {
+  margin: 0 0 12px;
+  font-size: 9px;
+}
+.geometry-building-detail dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 9px 0;
+}
+.geometry-building-detail dt {
+  color: #829fac;
+  flex: none;
+}
+.geometry-building-detail dd {
+  color: #b1cad8;
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.geometry-building-detail p {
+  color: #9eb6c5;
+  font-size: 10px;
+  line-height: 1.8;
+  margin: 0 0 12px;
+}
+.geometry-building-detail small {
+  display: block;
+  color: #758f9e;
+  font-size: 9px;
+  line-height: 1.8;
+  margin-top: 12px;
+}
+.geometry-building-detail .geometry-associate-button {
+  width: 100%;
+  color: #b8def5;
+  border-color: #456e8a;
+  background: #26465d;
+}
+.geometry-editor-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid #354e60;
+  background: #1b303f;
+  flex: none;
+}
+.geometry-editor-footer small {
+  color: #8daabd;
+  font-size: 9px;
+  margin-left: auto;
+}
+.geometry-editor-footer .geometry-finish {
+  background: #3d78be;
+  border-color: #6096d5;
+  color: #fff;
+  margin-left: 10px;
+}
+.modal.geometry-fullscreen-modal {
+  width: calc(100vw - 32px);
+  height: calc(100dvh - 32px);
+  max-height: none;
+  max-width: none;
+}
+.geometry-fullscreen-modal > .modal-body {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+}
+.geometry-fullscreen-modal .geometry-workspace {
+  min-height: 0;
+}
+.geometry-fullscreen-modal .geometry-editor-body {
+  grid-template-columns: minmax(0, 1fr) 290px;
+}
+.geometry-editor-placeholder {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  height: 100%;
+  min-height: 360px;
+  color: #93b7d0;
+}
+.geometry-editor-placeholder > button {
+  border: 1px solid #507595;
+  background: #28485f;
+  border-radius: 5px;
+  padding: 8px 12px;
+  color: #b9ddf4;
+}
+@media (max-width: 1250px) {
+  .spatial-resource-form > .form-grid {
+    grid-template-columns: 225px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .geometry-editor-body {
+    grid-template-columns: minmax(0, 1fr) 218px;
+  }
+  .geometry-toolbar-stats {
+    order: 3;
+    margin-left: 0;
+    width: 100%;
+  }
+  .geometry-toolbar > .geometry-expand {
+    margin-left: auto;
+  }
+  .geometry-stage .map-watermark > span {
+    display: none;
+  }
+}
+@media (max-width: 1050px) {
+  .modal.spatial-resource-modal {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+  }
+  .spatial-resource-modal > .modal-body {
+    overflow: auto;
+    padding: 12px;
+  }
+  .spatial-resource-modal .modal-body > div,
+  .spatial-resource-form {
+    height: auto;
+  }
+  .spatial-resource-form > .form-grid {
+    overflow: visible;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: none;
+  }
+  .spatial-resource-form > .form-grid > .field:not(.spatial-field) {
+    grid-column: auto;
+  }
+  .spatial-resource-form > .form-grid > .field.wide {
+    grid-column: 1 / -1;
+  }
+  .spatial-resource-form > .form-grid > .field.spatial-field {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    height: 560px;
+  }
+  .geometry-stage .map-tools button {
+    padding: 4px 6px;
+  }
+  .geometry-fullscreen-modal .geometry-editor-body {
+    grid-template-columns: minmax(0, 1fr) 250px;
+  }
+}
+@media (max-width: 680px) {
+  .geometry-editor-body,
+  .geometry-fullscreen-modal .geometry-editor-body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+  .geometry-stage {
+    min-height: 380px;
+  }
+  .geometry-sidebar {
+    max-height: 280px;
+    border-left: 0;
+    border-top: 1px solid #354e60;
+  }
+}

@@ -1,0 +1,8 @@
+# Local development only. The normal deployment keeps a named upload volume.
+services:
+  backend:
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - type: bind
+        source: ./backend/uploads
+        target: /app/uploads

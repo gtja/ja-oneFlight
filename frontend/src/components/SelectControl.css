@@ -1,0 +1,241 @@
+.select-control {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+}
+
+.select-control__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 36px;
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid #3b5263;
+  border-radius: 7px;
+  background: #13232f;
+  color: #d8e3ec;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.select-control__trigger:hover:not(:disabled) {
+  border-color: #60809a;
+  background: #172a38;
+}
+
+.select-control__trigger:focus-visible,
+.select-control__trigger[aria-expanded="true"] {
+  border-color: #5599ed;
+  box-shadow: 0 0 0 2px rgb(85 153 237 / 13%);
+  outline: none;
+}
+
+.select-control__trigger:disabled {
+  color: #8295a3;
+  border-color: #324552;
+  background: #182630;
+  opacity: 0.65;
+}
+
+.select-control__trigger.is-placeholder {
+  color: #91a7b8;
+}
+
+.select-control__value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select-control__trigger > svg {
+  flex: none;
+  color: #88a4ba;
+  transition: transform 140ms ease;
+}
+
+.select-control__trigger > svg.is-open {
+  transform: rotate(180deg);
+}
+
+.select-control__popup {
+  position: fixed;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 5px;
+  border: 1px solid #425d72;
+  border-radius: 9px;
+  background: #1c2d3a;
+  color: #d8e3ec;
+  box-shadow:
+    0 12px 30px rgb(0 0 0 / 32%),
+    0 2px 7px rgb(0 0 0 / 20%);
+  font-size: 12px;
+  line-height: 1.5;
+  isolation: isolate;
+}
+
+.select-control__popup.is-above {
+  transform: translateY(-100%);
+}
+
+.select-control__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 38px;
+  margin: 1px 2px 5px;
+  padding: 0 8px;
+  border: 1px solid #3b5366;
+  border-radius: 6px;
+  background: #142532;
+  color: #8da6b9;
+}
+
+.select-control__search:focus-within {
+  border-color: #5599ed;
+}
+
+.select-control__search > input {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #d8e3ec;
+  font: inherit;
+}
+
+.select-control__search > input:focus-visible {
+  outline: none;
+}
+
+.select-control__search > input::placeholder {
+  color: #849eaf;
+  font-size: 11px;
+}
+
+.select-control__search > svg,
+.select-control__search > span {
+  flex: none;
+}
+
+.select-control__search > span {
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.select-control__list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #4b6376 transparent;
+}
+
+.select-control__list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.select-control__list::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  background: #4b6376;
+}
+
+.select-control__group {
+  padding: 10px 10px 5px;
+  color: #8da7bb;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.select-control__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  margin: 1px 0;
+  padding: 8px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.select-control__option.is-active {
+  background: #2c4356;
+}
+
+.select-control__option.is-selected {
+  background: #243e55;
+  color: #a9d0ff;
+}
+
+.select-control__option.is-selected.is-active {
+  background: #2b4a66;
+}
+
+.select-control__option.is-disabled {
+  background: transparent;
+  color: #7f94a5;
+  cursor: not-allowed;
+}
+
+.select-control__option-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.select-control__option-label {
+  overflow-wrap: anywhere;
+}
+
+.select-control__option-copy > small {
+  color: #93aabb;
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.select-control__option.is-disabled small {
+  color: #7f94a5;
+}
+
+.select-control__option > svg {
+  flex: none;
+  color: #8dc2ff;
+}
+
+.select-control__empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 25px 12px;
+  color: #829daf;
+  text-align: center;
+}
+
+.select-control__empty strong {
+  color: #b6c7d4;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.select-control__empty span {
+  font-size: 10px;
+}

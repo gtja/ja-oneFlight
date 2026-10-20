@@ -1,0 +1,8 @@
+target
+data
+uploads
+*.log
+.env*
+*.pem
+*.key
+private
