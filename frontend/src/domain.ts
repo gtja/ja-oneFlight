@@ -43,19 +43,26 @@ export const STATUS_LABELS: Record<string, string> = {
 };
 export const statusLabel = (status?: string) =>
   STATUS_LABELS[status || "UNKNOWN"] || status || "未知";
+
+const dateTimeOptions: Intl.DateTimeFormatOptions = {
+  timeZone: "Asia/Shanghai",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+};
+const fullDateTimeFormat = new Intl.DateTimeFormat("zh-CN", {
+  ...dateTimeOptions,
+  year: "numeric",
+});
+const shortDateTimeFormat = new Intl.DateTimeFormat("zh-CN", dateTimeOptions);
+
 export const dateTime = (date: unknown, short = false) => {
   if (!date) return "—";
-  const d = new Date(String(date));
-  if (Number.isNaN(d.getTime())) return String(date);
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    year: short ? undefined : "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(d);
+  const parsedDate = new Date(String(date));
+  if (Number.isNaN(parsedDate.getTime())) return String(date);
+  return (short ? shortDateTimeFormat : fullDateTimeFormat).format(parsedDate);
 };
 export const localInput = (date: unknown) =>
   date

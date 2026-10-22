@@ -4,7 +4,10 @@ import com.oneflight.auth.AccessScope;
 import com.oneflight.auth.CurrentUser;
 import com.oneflight.auth.Role;
 import com.oneflight.common.ApiException;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -78,6 +81,46 @@ class BusinessSourceCatalogTest {
         double firstLat = ((Number) ((List<?>) ring.getFirst()).get(1)).doubleValue(); assertTrue(firstLat > 30.001 && firstLat < 30.003);
         assertNull(BusinessSourceCatalog.zoneGeometry("CIRCULAR", ProviderJson.JSON.readTree("[[120,30,1409]]")));
     }
+    @Test
+    void circleGeometryPreservesEveryPointAtOrdinaryAndBoundaryLocations() throws Exception {
+        // Cardinal coordinates captured before the refactor; tolerances permit platform Math rounding.
+        List<CircleFixture> fixtures = List.of(
+                new CircleFixture(120, 30, 200, List.of(
+                        List.of(120.0, 30.00179864072745), List.of(120.0020768914161, 29.99999998370045),
+                        List.of(120.0, 29.998201359272546), List.of(119.9979231085839, 29.99999998370045))),
+                new CircleFixture(179.9999, 0, 1000, List.of(
+                        List.of(179.99990000000003, 0.00899320363724538), List.of(-179.99110679636271, 0.0),
+                        List.of(179.99990000000003, -0.00899320363724538), List.of(179.99090679636276, 0.0))),
+                new CircleFixture(-45, 89.99, 2000, List.of(
+                        List.of(135.0, 89.99201359270332), List.of(15.927018099347038, 89.9794206209171),
+                        List.of(-45.0, 89.97201359272901), List.of(-105.92701809934698, 89.9794206209171))),
+                new CircleFixture(0, -30, 10_000_000, List.of(
+                        List.of(0.0, 59.9320363724538), List.of(89.94114176511027, -0.0339818077963542),
+                        List.of(-180.0, -60.06796362754619), List.of(-89.94114176511033, -0.03398180779636635))));
+        for (CircleFixture fixture : fixtures) {
+            var raw = ProviderJson.JSON.valueToTree(List.of(
+                    List.of(fixture.longitude(), fixture.latitude(), 0, fixture.radius())));
+            Map<String, Object> geometry = BusinessSourceCatalog.zoneGeometry("CIRCULAR", raw);
+            assertEquals("Polygon", geometry.get("type"));
+            List<?> ring = (List<?>) ((List<?>) geometry.get("coordinates")).getFirst();
+            assertEquals(65, ring.size());
+            assertEquals(ring.getFirst(), ring.getLast());
+            for (int index = 0; index < fixture.cardinals().size(); index++) {
+                List<?> point = (List<?>) ring.get(index * 16);
+                List<Double> expected = fixture.cardinals().get(index);
+                assertEquals(expected.get(0), ((Number) point.get(0)).doubleValue(), 1e-10);
+                assertEquals(expected.get(1), ((Number) point.get(1)).doubleValue(), 1e-10);
+            }
+            for (Object value : ring) {
+                List<?> point = (List<?>) value;
+                double longitude = ((Number) point.get(0)).doubleValue();
+                double latitude = ((Number) point.get(1)).doubleValue();
+                assertTrue(longitude >= -180 && longitude <= 180);
+                assertTrue(latitude >= -90 && latitude <= 90);
+                assertEquals(fixture.radius(), distanceMeters(fixture.longitude(), fixture.latitude(), longitude, latitude), 0.005);
+            }
+        }
+    }
     @Test void nativeHistoricalTasksKeepUnknownValidityAndExcludeInvalidOrMixedScopeRecords() {
         JdbcTemplate jdbc = identity();
         jdbc.execute("CREATE TABLE action(id BIGINT,name VARCHAR(200),status VARCHAR(30),is_valid VARCHAR(20),type VARCHAR(20),action_scene VARCHAR(50),action_plan_id BIGINT,gmt_create TIMESTAMP,gmt_modified TIMESTAMP)");
@@ -97,4 +140,13 @@ class BusinessSourceCatalogTest {
         assertEquals("jdbc:mysql://host:31306/ja-4a?serverTimezone=Asia/Shanghai", BusinessSourceCatalog.identityUrl("jdbc:mysql://host:31306/dushu?serverTimezone=Asia/Shanghai"));
     }
     private BusinessSourceCatalog catalog(DeviceDirectory directory, AccessScope scope, JdbcTemplate identity) { return new BusinessSourceCatalog(directory, scope, null, null, identity); }
+    private double distanceMeters(double fromLongitude, double fromLatitude, double toLongitude, double toLatitude) {
+        double sinHalfLatitude = Math.sin(Math.toRadians(toLatitude - fromLatitude) / 2);
+        double sinHalfLongitude = Math.sin(Math.toRadians(toLongitude - fromLongitude) / 2);
+        double haversine = sinHalfLatitude * sinHalfLatitude
+                + Math.cos(Math.toRadians(fromLatitude)) * Math.cos(Math.toRadians(toLatitude))
+                * sinHalfLongitude * sinHalfLongitude;
+        return 2 * 6_371_008.8 * Math.asin(Math.sqrt(haversine));
+    }
+    private record CircleFixture(double longitude, double latitude, double radius, List<List<Double>> cardinals) { }
 }

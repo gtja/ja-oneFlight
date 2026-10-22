@@ -8,11 +8,26 @@ import com.oneflight.common.PageResult;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import jakarta.annotation.PreDestroy;
+import java.net.URI;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.*;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Consumer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,6 +36,8 @@ import org.springframework.stereotype.Service;
 /** Whitelisted source business directories. Source accounts are never granted local login or pilot roles. */
 @Service
 public class BusinessSourceCatalog implements AutoCloseable {
+    private static final int CIRCLE_SEGMENTS = 64;
+    private static final double EARTH_RADIUS_METERS = 6_371_008.8;
     private static final Set<String> KINDS = Set.of("people", "groups", "routes", "airspaces", "plans", "tasks", "events", "media");
     private final DeviceDirectory directory;
     private final AccessScope scope;
@@ -200,14 +217,18 @@ public class BusinessSourceCatalog implements AutoCloseable {
         if (keyword == null || keyword.isBlank()) { return ""; }
         if (keyword.length() > 200) { throw ApiException.invalid("查询关键词过长"); }
         List<String> terms = new ArrayList<>();
-        for (String column : columns) { terms.add(column + " LIKE ?"); args.add("%" + keyword.trim() + "%"); }
+        String pattern = "%" + keyword.trim() + "%";
+        for (String column : columns) {
+            terms.add(column + " LIKE ?");
+            args.add(pattern);
+        }
         return " AND (" + String.join(" OR ", terms) + ")";
     }
     private static boolean matches(Map<String, Object> row, String keyword) {
         return keyword == null || keyword.isBlank() || (Objects.toString(row.get("title"), "") + " " + row.get("id")).toLowerCase(Locale.ROOT).contains(keyword.trim().toLowerCase(Locale.ROOT));
     }
 
-    private PageResult<Map<String, Object>> select(JdbcTemplate jdbc, String fields, String from, String order, List<Object> args, int page, int size, String system, String entity, java.util.function.Consumer<Map<String, Object>> mapper) {
+    private PageResult<Map<String, Object>> select(JdbcTemplate jdbc, String fields, String from, String order, List<Object> args, int page, int size, String system, String entity, Consumer<Map<String, Object>> mapper) {
         Long total = jdbc.queryForObject("SELECT COUNT(*)" + from, Long.class, args.toArray());
         List<Object> pageArgs = new ArrayList<>(args); pageArgs.add(size); pageArgs.add((long) (page - 1) * size);
         List<Map<String, Object>> rows = query(jdbc, fields + from + order + " LIMIT ? OFFSET ?", pageArgs, system, entity);
@@ -219,15 +240,24 @@ public class BusinessSourceCatalog implements AutoCloseable {
     }
 
     static Map<String, Object> row(ResultSet rs, String system, String entity) throws SQLException {
-        Map<String, Object> row = new LinkedHashMap<>(); ResultSetMetaData metadata = rs.getMetaData();
+        Map<String, Object> row = new LinkedHashMap<>();
+        ResultSetMetaData metadata = rs.getMetaData();
         for (int i = 1; i <= metadata.getColumnCount(); i++) {
-            String name = camel(metadata.getColumnLabel(i).toLowerCase(Locale.ROOT)); Object value = rs.getObject(i);
-            if (value instanceof java.sql.Timestamp timestamp) { value = timestamp.toLocalDateTime().atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().toString(); }
-            if (value instanceof java.time.LocalDateTime date) { value = date.atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().toString(); }
+            String name = camel(metadata.getColumnLabel(i).toLowerCase(Locale.ROOT));
+            Object value = rs.getObject(i);
+            if (value instanceof Timestamp timestamp) {
+                value = timestamp.toLocalDateTime().atZone(ZoneId.of("Asia/Shanghai")).toInstant().toString();
+            }
+            if (value instanceof LocalDateTime date) {
+                value = date.atZone(ZoneId.of("Asia/Shanghai")).toInstant().toString();
+            }
             row.put(name, value);
         }
-        row.put("id", Objects.toString(row.get("sourceId"), "")); row.put("sourceSystem", system); row.put("sourceEntity", entity);
-        row.putIfAbsent("title", entity + " " + row.get("id")); return row;
+        row.put("id", Objects.toString(row.get("sourceId"), ""));
+        row.put("sourceSystem", system);
+        row.put("sourceEntity", entity);
+        row.putIfAbsent("title", entity + " " + row.get("id"));
+        return row;
     }
 
     private Snapshot snapshot() {
@@ -276,18 +306,29 @@ public class BusinessSourceCatalog implements AutoCloseable {
             points.add(List.of(x, y));
         }
         if ("CIRCULAR".equals(shape)) {
-            JsonNode p = raw.get(0); if (p.size() < 4 || !p.get(3).isNumber() || p.get(3).doubleValue() <= 0) { return null; }
-            double lon = p.get(0).doubleValue(), lat = p.get(1).doubleValue(), radius = p.get(3).doubleValue();
+            JsonNode center = raw.get(0);
+            if (center.size() < 4 || !center.get(3).isNumber() || center.get(3).doubleValue() <= 0) { return null; }
+            double longitude = center.get(0).doubleValue();
+            double latitude = center.get(1).doubleValue();
+            double radius = center.get(3).doubleValue();
             if (radius > 10_000_000) { return null; }
+            double distance = radius / EARTH_RADIUS_METERS;
+            double centerLatitude = Math.toRadians(latitude);
+            double centerLongitude = Math.toRadians(longitude);
+            double sinLatitude = Math.sin(centerLatitude);
+            double cosLatitude = Math.cos(centerLatitude);
+            double sinDistance = Math.sin(distance);
+            double cosDistance = Math.cos(distance);
             List<List<Double>> ring = new ArrayList<>();
-            for (int i = 0; i <= 64; i++) {
-                double bearing = 2 * Math.PI * i / 64, distance = radius / 6_371_008.8;
-                double lat1 = Math.toRadians(lat), lon1 = Math.toRadians(lon);
-                double lat2 = Math.asin(Math.sin(lat1) * Math.cos(distance) + Math.cos(lat1) * Math.sin(distance) * Math.cos(bearing));
-                double lon2 = lon1 + Math.atan2(Math.sin(bearing) * Math.sin(distance) * Math.cos(lat1), Math.cos(distance) - Math.sin(lat1) * Math.sin(lat2));
+            for (int i = 0; i <= CIRCLE_SEGMENTS; i++) {
+                double bearing = 2 * Math.PI * i / CIRCLE_SEGMENTS;
+                double lat2 = Math.asin(sinLatitude * cosDistance + cosLatitude * sinDistance * Math.cos(bearing));
+                double lon2 = centerLongitude + Math.atan2(Math.sin(bearing) * sinDistance * cosLatitude,
+                        cosDistance - sinLatitude * Math.sin(lat2));
                 ring.add(List.of(((Math.toDegrees(lon2) + 540) % 360) - 180, Math.toDegrees(lat2)));
             }
-            ring.set(64, ring.getFirst()); return Map.of("type", "Polygon", "coordinates", List.of(ring));
+            ring.set(CIRCLE_SEGMENTS, ring.getFirst());
+            return Map.of("type", "Polygon", "coordinates", List.of(ring));
         }
         if ("LINE".equals(shape)) { return points.size() < 2 ? null : Map.of("type", "LineString", "coordinates", points); }
         if ("POLYGON".equals(shape) && points.size() >= 3) { if (!points.getFirst().equals(points.getLast())) { points.add(points.getFirst()); } return Map.of("type", "Polygon", "coordinates", List.of(points)); }
@@ -298,16 +339,22 @@ public class BusinessSourceCatalog implements AutoCloseable {
             Object value = row.get(key); if (value == null) { continue; }
             String raw = value.toString();
             try {
-                java.net.URI uri = java.net.URI.create(raw);
+                URI uri = URI.create(raw);
                 if (uri.isAbsolute() && !Set.of("http", "https").contains(uri.getScheme().toLowerCase(Locale.ROOT))) { row.put(key, null); continue; }
-                row.put(key, new java.net.URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), null, null).toString());
+                row.put(key, new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), null, null).toString());
             } catch (Exception e) { row.put(key, null); }
         }
     }
     static String safeName(String value) { return value.replaceAll("(?<!\\d)1[3-9]\\d{9}(?!\\d)", "[手机号已隐藏]").replaceAll("(?<!\\d)\\d{17}[\\dXx](?!\\d)", "[证件号已隐藏]"); }
     static String camel(String value) { StringBuilder result = new StringBuilder(); boolean upper = false; for (char c : value.toCharArray()) { if (c == '_') { upper = true; } else { result.append(upper ? Character.toUpperCase(c) : c); upper = false; } } return result.toString(); }
     static JsonNode parse(Object value) { try { return value == null ? null : ProviderJson.JSON.readTree(value.toString()); } catch (Exception e) { return null; } }
-    static Double numeric(JsonNode node, String key) { if (node == null || !node.path(key).isNumber()) { return null; } double value = node.path(key).doubleValue(); return Double.isFinite(value) ? value : null; }
+    static Double numeric(JsonNode node, String key) {
+        if (node == null) { return null; }
+        JsonNode field = node.path(key);
+        if (!field.isNumber()) { return null; }
+        double value = field.doubleValue();
+        return Double.isFinite(value) ? value : null;
+    }
     private static Double number(Object value) { return value instanceof Boolean b ? b ? 1d : 0d : value instanceof Number n ? n.doubleValue() : null; }
     private static boolean suspiciousTime(Object value) { if (value == null) { return true; } try { return Instant.parse(value.toString()).isBefore(Instant.parse("2000-01-01T00:00:00Z")); } catch (Exception e) { return true; } }
     private static boolean blank(String value) { return value == null || value.isBlank(); }

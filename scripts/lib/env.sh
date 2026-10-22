@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Parse dotenv without eval/source, so credential values cannot execute shell code.
 load_oneflight_env() {
-  local env_file="$1" line key value
+  local env_file="$1" allowed_prefix="${2:-}" line key value
   [[ -f "$env_file" ]] || { printf 'Missing configuration: %s\n' "$env_file" >&2; return 1; }
   while IFS= read -r line || [[ -n "$line" ]]; do
     line=${line%$'\r'}
@@ -10,6 +10,7 @@ load_oneflight_env() {
     key=${line%%=*}
     value=${line#*=}
     [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || { printf 'Invalid dotenv key.\n' >&2; return 1; }
+    [[ -z "$allowed_prefix" || "$key" == "$allowed_prefix"* ]] || continue
     if [[ "$value" == \"*\" || "$value" == \'*\' ]]; then
       value=${value:1:${#value}-2}
     fi

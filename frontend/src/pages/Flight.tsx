@@ -7,7 +7,6 @@ import {
   Compass,
   FileText,
   Radio,
-  Search,
   Video,
   Wifi,
 } from "lucide-react";
@@ -16,7 +15,6 @@ import {
   useCatalog,
   useData,
   useDevices,
-  useList,
   type Entity,
 } from "../api";
 import { useFeedback, useUser } from "../context";

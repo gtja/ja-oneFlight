@@ -174,6 +174,53 @@ class TaskAssignmentOptionsIntegrationTest {
     }
 
     @Test
+    void summaryDistinguishesActivePendingAndAssignableCandidatesAndKeepsSortedOptions() throws Exception {
+        device.title = "B-device";
+        resources.save(device);
+        Resource pending = device("A-pending", "PENDING_CONFIRMATION", organization.id);
+        device("C-inactive", "INACTIVE", organization.id);
+        Resource unmatched = device("D-unmatched", "ACTIVE", organization.id);
+        Resource person = device("Excluded-person", "ACTIVE", organization.id);
+        person.kind = "PERSON";
+        resources.save(person);
+        pilot.displayName = "B-pilot";
+        users.save(pilot);
+        UserAccount disabled = account("disabled-pilot", Role.PILOT, organization.id, "西湖区", device.id);
+        disabled.displayName = "A-pilot";
+        disabled.enabled = false;
+        users.save(disabled);
+
+        JsonNode result = options("admin", device.id);
+        JsonNode summary = result.path("summary");
+        assertThat(summary.path("deviceCount").asLong()).isEqualTo(4);
+        assertThat(summary.path("activeDeviceCount").asLong()).isEqualTo(2);
+        assertThat(summary.path("pendingDeviceCount").asLong()).isEqualTo(1);
+        assertThat(summary.path("availableDeviceCount").asLong()).isEqualTo(1);
+        assertThat(summary.path("pilotCount").asLong()).isEqualTo(2);
+        assertThat(summary.path("availablePilotCount").asLong()).isEqualTo(1);
+        assertThat(result.path("devices").get(0).path("id").asText()).isEqualTo(pending.id);
+        assertThat(result.path("devices").get(3).path("id").asText()).isEqualTo(unmatched.id);
+        assertThat(result.path("pilots").get(0).path("id").asText()).isEqualTo(disabled.id);
+        assertThat(candidate(result, "devices", unmatched.id).path("eligible").asBoolean()).isTrue();
+        assertThat(candidate(result, "devices", unmatched.id).path("compatiblePilotCount").asLong()).isZero();
+        assertThat(codes(candidate(result, "pilots", disabled.id))).containsExactly("PILOT_DISABLED");
+        assertThat(events.count()).isZero();
+    }
+
+    @Test
+    void emptyCandidateDirectoriesHaveZeroSummaryCounts() throws Exception {
+        resources.deleteAll();
+        pilot.role = Role.DEPARTMENT;
+        users.save(pilot);
+
+        JsonNode result = options("admin", null);
+        assertThat(result.path("devices").isEmpty()).isTrue();
+        assertThat(result.path("pilots").isEmpty()).isTrue();
+        result.path("summary").forEach(count -> assertThat(count.asLong()).isZero());
+        assertThat(events.count()).isZero();
+    }
+
+    @Test
     void outOfAreaPilotExplainsBothAreasAndCannotBeAssigned() throws Exception {
         pilot.regions = "余杭区";
         users.save(pilot);

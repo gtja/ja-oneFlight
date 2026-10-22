@@ -14,6 +14,14 @@ describe("来源数据与时区口径", () => {
     expect(localInput(toInstant(input))).toBe(input);
     expect(dateTime(toInstant(input))).toContain("10/14");
   });
+  it("完整与简短时间在上海跨日时保持原有文本", () => {
+    const instant = "2026-10-13T16:30:00.000Z";
+    expect(dateTime(instant)).toBe("2026/10/14 00:30");
+    expect(dateTime(instant, true)).toBe("10/14 00:30");
+    expect(dateTime("not-a-date")).toBe("not-a-date");
+    expect(dateTime(null)).toBe("—");
+    expect(dateTime(undefined, true)).toBe("—");
+  });
   it("源值零与未知保持区别，秒米只在展示时换算", () => {
     expect(secondsLabel(0)).toBe("0.00 小时");
     expect(secondsLabel(null)).toBe("—");

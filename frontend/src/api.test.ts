@@ -11,6 +11,30 @@ const envelope = (data: unknown, status = 200, code = "SUCCESS") =>
   );
 afterEach(() => vi.unstubAllGlobals());
 describe("工作台请求边界", () => {
+  it.each(["GET", "HEAD", "get", "head"])(
+    "%s 读请求不获取CSRF令牌，并保留调用方请求头",
+    async (method) => {
+      const fetcher = vi.fn().mockResolvedValue(envelope({ id: "record-1" }));
+      vi.stubGlobal("fetch", fetcher);
+      await api("/tasks", { method, headers: { "X-Trace-Id": "trace-1" } });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      const [path, options] = fetcher.mock.calls[0];
+      expect(path).toBe("/api/v1/tasks");
+      expect(options.credentials).toBe("include");
+      expect(options.headers.get("X-Trace-Id")).toBe("trace-1");
+      expect(options.headers.has("X-CSRF-TOKEN")).toBe(false);
+    },
+  );
+  it.each(["SUCCESS", "OK", "0"])(
+    "兼容成功码 %s 并保留返回数据",
+    async (code) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(envelope({ id: "record-1" }, 200, code)),
+      );
+      await expect(api("/tasks/record-1")).resolves.toEqual({ id: "record-1" });
+    },
+  );
   it("写操作携带本地会话和CSRF令牌，长ID完整传递", async () => {
     const fetcher = vi
       .fn()

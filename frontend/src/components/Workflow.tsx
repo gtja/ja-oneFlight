@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Upload } from "lucide-react";
+import { FileText, Upload } from "lucide-react";
 import { api, useList, write, type Entity } from "../api";
 import { dateTime } from "../domain";
-import { Button, Details, Empty, EntityForm, Modal, type Field } from "./UI";
+import { Details, Empty, EntityForm, Modal, type Field } from "./UI";
 import { useFeedback } from "../context";
 export function useMutationFeedback() {
   const client = useQueryClient();

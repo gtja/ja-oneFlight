@@ -5,7 +5,6 @@ import {
   FileText,
   Info,
   Layers3,
-  Search,
   ShieldAlert,
 } from "lucide-react";
 import {
