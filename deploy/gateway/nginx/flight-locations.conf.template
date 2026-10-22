@@ -1,0 +1,112 @@
+    location = /__oneflight/bootstrap {
+        limit_except GET { deny all; }
+        proxy_pass http://${ONEFLIGHT_API_UPSTREAM}/api/v1/flight-control/bootstrap;
+        include ${NGINX_RUNTIME_DIR}/oneflight-bff.conf;
+        proxy_set_header X-Oneflight-Entry-Grant '';
+        proxy_set_header X-Oneflight-Request-Kind '';
+    }
+    location = /__oneflight/logout {
+        limit_except GET { deny all; }
+        proxy_pass http://${ONEFLIGHT_API_UPSTREAM}/api/v1/flight-control/logout-page;
+        include ${NGINX_RUNTIME_DIR}/oneflight-bff.conf;
+        proxy_set_header X-Oneflight-Entry-Grant $cookie_ONEFLIGHT_ENTRY;
+        proxy_set_header X-Oneflight-Request-Kind '';
+    }
+    location = /__oneflight/gateway-check {
+        internal;
+        proxy_pass http://${ONEFLIGHT_API_UPSTREAM}/api/v1/flight-control/gateway-check;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length '';
+        proxy_set_header Host $http_host;
+        proxy_set_header Cookie '';
+        proxy_set_header Authorization '';
+        proxy_set_header X-Oneflight-Gateway-Secret ${FLIGHT_CONTROL_GATEWAY_SECRET};
+        proxy_set_header X-Oneflight-Entry-Grant $cookie_ONEFLIGHT_ENTRY;
+        proxy_set_header X-Oneflight-Request-Kind $oneflight_checked_request_kind;
+        proxy_buffering off;
+        proxy_cache off;
+        access_log off;
+    }
+    # Keep the original denial status. API/media/WS clients must receive the
+    # status directly, while document navigation receives our recovery page.
+    location = /__oneflight/entry-denied-401 {
+        internal;
+        alias ${NGINX_RUNTIME_DIR}/public/$oneflight_denial_file;
+        default_type text/html;
+        add_header Cache-Control 'no-store' always;
+        add_header Referrer-Policy 'no-referrer' always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors ${ONEFLIGHT_PUBLIC_ORIGIN}" always;
+    }
+    location = /__oneflight/entry-denied-403 {
+        internal;
+        alias ${NGINX_RUNTIME_DIR}/public/$oneflight_denial_file;
+        default_type text/html;
+        add_header Cache-Control 'no-store' always;
+        add_header Referrer-Policy 'no-referrer' always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors ${ONEFLIGHT_PUBLIC_ORIGIN}" always;
+    }
+    location = /__oneflight/auth-expired {
+        alias ${NGINX_RUNTIME_DIR}/public/auth-expired.html;
+        default_type text/html;
+        add_header Cache-Control 'no-store' always;
+        add_header Referrer-Policy 'no-referrer' always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors ${ONEFLIGHT_PUBLIC_ORIGIN}" always;
+    }
+    location /__oneflight/assets/ {
+        alias ${NGINX_RUNTIME_DIR}/public/;
+        add_header Cache-Control 'no-store' always;
+        add_header Referrer-Policy 'no-referrer' always;
+        add_header Content-Security-Policy "frame-ancestors ${ONEFLIGHT_PUBLIC_ORIGIN}" always;
+    }
+    location /__oneflight/ { return 404; }
+
+    # Full-site fixed upstream includes /assets, /js, /cesium, /proxyApi,
+    # /proxyWsApi and upstream-supported video/WHEP/FLV paths unchanged.
+    location / {
+        # Resolve before auth_request changes $uri to its internal location.
+        set $oneflight_checked_request_kind $oneflight_request_kind;
+        auth_request /__oneflight/gateway-check;
+        error_page 401 /__oneflight/entry-denied-401;
+        error_page 403 /__oneflight/entry-denied-403;
+        # Deployment-controlled only: no request field can select a destination.
+        # The variable defers DNS resolution until a source request is received.
+        set $oneflight_dushu_connect ${DUSHU_CONNECT_TARGET};
+        proxy_pass https://$oneflight_dushu_connect;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DUSHU_UPSTREAM_HOST}:${DUSHU_UPSTREAM_PORT};
+        proxy_set_header _origin_target_host ${DUSHU_TARGET_HOST};
+        # Native WebSockets keep the fixed remote platform Origin after the local hop.
+        proxy_set_header Origin $oneflight_source_origin;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Oneflight-Gateway-Secret '';
+        proxy_set_header X-Oneflight-Entry-Grant '';
+        proxy_set_header X-Oneflight-Request-Kind '';
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_ssl_server_name on;
+        proxy_ssl_name ${DUSHU_UPSTREAM_HOST};
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_ssl_verify_depth 5;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_redirect https://${DUSHU_UPSTREAM_HOST}:${DUSHU_UPSTREAM_PORT}/ ${FLIGHT_CONTROL_ORIGIN}/;
+        proxy_redirect http://${DUSHU_UPSTREAM_HOST}:${DUSHU_UPSTREAM_PORT}/ ${FLIGHT_CONTROL_ORIGIN}/;
+        # The native global status WebSocket authenticates with these personal-source cookies.
+        # Never forward the parent platform session, locale or unrelated browser cookies.
+        proxy_set_header Cookie "access_token=$cookie_access_token; username=$cookie_username";
+        proxy_hide_header Set-Cookie;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header Content-Security-Policy;
+        proxy_hide_header Referrer-Policy;
+        proxy_hide_header ETag;
+        # Do not inject into JS, JSON, WebSocket frames or media responses.
+        proxy_set_header Accept-Encoding '';
+        # sub_filter defaults to text/html only.
+        sub_filter_once on;
+        sub_filter '</head>' '<link rel="stylesheet" href="/__oneflight/assets/embed.css"><script src="/__oneflight/assets/config.js"></script><script src="/__oneflight/assets/adapter.js"></script></head>';
+    }

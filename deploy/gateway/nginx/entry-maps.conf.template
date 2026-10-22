@@ -1,0 +1,24 @@
+# The default is a new document entry. Only known resource/API paths continue an
+# existing entry grant; an arbitrary Upgrade/Accept header cannot make a SPA path
+# bypass the business check. $uri excludes the query string.
+map $uri $oneflight_source_path_kind {
+    default entry;
+    ~*^/(?:source|control-room)(?:/|$) entry;
+    ~*^/(?:assets|js|css|images?|img|fonts?|icons?|cesium|workers|thirdparty|textures|widgets)/ continue;
+    ~*^/(?:proxyApi|proxyWsApi|api|ws|video|media|live|stream|streams|whep|whip|flv|hls)(?:/|$) continue;
+    ~*\.(?:js|mjs|css|map|wasm|json|png|jpe?g|gif|webp|svg|ico|avif|woff2?|ttf|otf|eot|mp4|webm|m3u8|ts|flv|terrain|b3dm|i3dm|pnts|glb|gltf|ktx2?|basis|bin|czml|pbf)$ continue;
+}
+map "$http_sec_fetch_dest|$http_accept|$oneflight_source_path_kind" $oneflight_request_kind {
+    ~*^(?:document|iframe)\| entry;
+    ~*^[^|]*\|[^|]*text/html entry;
+    ~*\|continue$ continue;
+    default entry;
+}
+map $oneflight_checked_request_kind $oneflight_denial_file {
+    continue entry-empty.txt;
+    default entry-denied.html;
+}
+map $oneflight_request_kind $oneflight_document_cache_control {
+    entry no-store;
+    default '';
+}

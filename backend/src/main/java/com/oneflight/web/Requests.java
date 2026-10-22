@@ -101,6 +101,14 @@ public final class Requests {
             @Size(max = 500) Set<String> organizationIds,
             Map<String, Object> provenance) {}
 
+    public record BusinessPermissionsInput(
+            @NotNull Role role,
+            @NotBlank String organizationId,
+            Set<String> regions,
+            Set<String> deviceIds,
+            Boolean enabled,
+            @Size(max = 500) Set<String> organizationIds) {}
+
     public record ActionInput(
             @NotBlank String action,
             @Size(max = 2000) String note,

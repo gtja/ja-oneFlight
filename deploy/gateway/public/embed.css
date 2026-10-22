@@ -1,0 +1,16 @@
+/* Elements are marked only after the verified header anchor is located. */
+html.oneflight-embedded, html.oneflight-embedded body, html.oneflight-embedded #root {
+  width: 100%; height: 100%; min-height: 0; margin: 0; overflow: hidden;
+}
+.oneflight-embedded [data-oneflight-global-header],
+.oneflight-embedded [data-oneflight-global-navigation] { display: none !important; }
+.oneflight-embedded [data-oneflight-layout] {
+  width: 100% !important; height: 100% !important; min-height: 0 !important;
+}
+.oneflight-embedded [data-oneflight-content] { min-height: 0 !important; flex: 1 1 0% !important; }
+.oneflight-integration-status {
+  box-sizing: border-box; display: grid; place-content: center;
+  min-height: 100vh; padding: 24px; background: #15212b; color: #f1d38b;
+  font: 16px/1.7 system-ui, sans-serif; text-align: center;
+}
+html.oneflight-adapting #root { visibility: hidden; }

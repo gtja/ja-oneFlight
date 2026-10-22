@@ -1,7 +1,13 @@
 import type { Navigate } from "../navigation";
 import SourceRecords from "../components/SourceRecords";
 import PlanTaskModal from "../components/PlanTaskModal";
-import { useState } from "react";
+import PlanExecutionTasks from "./services/PlanExecutionTasks";
+import {
+  planKinds as kinds,
+  consultationFields,
+  serviceFields,
+} from "./services/fields";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -18,7 +24,7 @@ import {
   write,
   type Entity,
 } from "../api";
-import { dateTime, REGIONS, statusLabel } from "../domain";
+import { dateTime, statusLabel } from "../domain";
 import { useUser } from "../context";
 import {
   ActionModal,
@@ -40,46 +46,17 @@ import {
   Status,
   Tabs,
   Unavailable,
-  type Field,
 } from "../components/UI";
-const kinds = [
-  { value: "DAILY", label: "日常计划" },
-  { value: "LONG_TERM", label: "长期计划" },
-  { value: "DEVICE_ADMISSION", label: "设备准入" },
-  { value: "PILOT_ADMISSION", label: "人员准入" },
-];
-const planFields: Field[] = [
-  { key: "title", label: "申请名称", required: true, wide: true },
-  { key: "kind", label: "申请类型", required: true, options: kinds },
-  {
-    key: "region",
-    label: "适用区域",
-    required: true,
-    options: REGIONS.map((v) => ({ value: v, label: v })),
-  },
-  { key: "startAt", label: "开始时间", type: "datetime-local", required: true },
-  { key: "endAt", label: "结束时间", type: "datetime-local", required: true },
-  { key: "height", label: "申请高度（米）", type: "number" },
-  { key: "materialName", label: "资格 / 材料名称" },
-  { key: "materialNumber", label: "证照 / 材料编号" },
-  { key: "validFrom", label: "材料有效起始日", type: "date" },
-  { key: "validUntil", label: "材料有效截止日", type: "date" },
-  {
-    key: "scope",
-    label: "飞行范围 / 材料说明",
-    type: "textarea",
-    required: true,
-    wide: true,
-  },
-];
 export default function Services({
   navigate,
   planId,
   taskId,
+  initialAction,
 }: {
   navigate?: Navigate;
   planId?: string;
   taskId?: string;
+  initialAction?: string;
 }) {
   const user = useUser();
   const manage = ["ADMIN", "DISPATCH"].includes(user.role);
@@ -90,7 +67,15 @@ export default function Services({
   const [selected, setSelected] = useState<Entity | null>(
     planId ? { id: planId } : null,
   );
-  const [create, setCreate] = useState<string | null>(null);
+  const [create, setCreate] = useState<string | null>(
+    initialAction === "apply" && !planId ? "plan" : null,
+  );
+  const [moreOptions, setMoreOptions] = useState(false);
+  const [applicationSeed, setApplicationSeed] = useState<
+    Record<string, unknown>
+  >({});
+  const [applicationNotice, setApplicationNotice] = useState("");
+  const handledInitialAction = useRef(false);
   const [action, setAction] = useState("");
   const [editing, setEditing] = useState(false);
   const [taskPlan, setTaskPlan] = useState<Entity | null>(null);
@@ -121,48 +106,87 @@ export default function Services({
   const arrange = ["ADMIN", "DISPATCH", "DEPARTMENT"].includes(user.role);
   const canEditCurrent =
     !!current && (user.role !== "PILOT" || current.createdBy === user.id);
-  const fields: Field[] = [
-    ...planFields,
-    ...(manage
-      ? [
-          {
-            key: "organizationId",
-            label: "申请部门",
-            required: true,
-            options: (organizations.data?.items || []).map((r) => ({
-              value: r.id,
-              label: entityName(r),
-            })),
-          },
-        ]
-      : []),
-    {
-      key: "resourceId",
-      label: "关联设备 / 人员档案",
-      options: (resources.data?.items || [])
-        .filter((r) => ["DEVICE", "PERSON"].includes(String(r.kind)))
-        .map((r) => ({ value: r.id, label: entityName(r) })),
-    },
-    ...(manage
-      ? [
-          {
-            key: "taskId",
-            label: "关联已有任务（可选）",
-            options: (tasks.data?.items || []).map((r) => ({
-              value: r.id,
-              label: entityName(r),
-            })),
-          },
-        ]
-      : []),
-  ];
+  useEffect(() => {
+    if (initialAction !== "apply" || !planId || handledInitialAction.current)
+      return;
+    if (detail.isLoading || (!detail.data && !detail.error)) return;
+    handledInitialAction.current = true;
+    const source = detail.data;
+    const start = Date.parse(String(source?.startAt || ""));
+    const end = Date.parse(String(source?.endAt || ""));
+    if (
+      source &&
+      ["DAILY", "LONG_TERM"].includes(String(source.kind)) &&
+      source.status === "APPROVED" &&
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      start < end &&
+      end > Date.now() &&
+      arrange
+    ) {
+      setTaskPlan(source);
+      return;
+    }
+    if (source) {
+      setApplicationSeed({
+        kind: ["DAILY", "LONG_TERM"].includes(String(source.kind))
+          ? source.kind
+          : "DAILY",
+        organizationId: source.organizationId,
+        region: source.region,
+        scope: source.scope,
+      });
+      setApplicationNotice(
+        end <= Date.now()
+          ? "原计划已过期，请重新选择申请时段并提交审核。"
+          : "请核对申请内容，选择新的申请时段后提交审核。",
+      );
+    } else {
+      setApplicationNotice("原计划暂时无法读取，请填写新的飞行申请。");
+    }
+    setCreate("plan");
+  }, [
+    initialAction,
+    planId,
+    detail.data,
+    detail.error,
+    detail.isLoading,
+    arrange,
+  ]);
+  const { fields, basicFlightFields, optionalFlightFields, admissionFields } =
+    serviceFields({
+      manage,
+      organizations: organizations.data?.items || [],
+      resources: resources.data?.items || [],
+      tasks: tasks.data?.items || [],
+    });
   const selectedConsult =
     selected && tab === "preflight"
       ? consultations.data?.items.find((r) => r.id === selected.id) || selected
       : null;
+  const taskOrganizationName = taskPlan
+    ? entityName(
+        organizations.data?.items.find(
+          (organization) => organization.id === taskPlan.organizationId,
+        ),
+      )
+    : "未命名";
+
+  function openApplication(type: "plan" | "admission") {
+    setApplicationSeed({});
+    setApplicationNotice("");
+    setMoreOptions(false);
+    setCreate(type);
+  }
   async function createPlan(body: Record<string, unknown>) {
     return mutate(async () => {
-      const p = await write("/plans", body);
+      const payload = { ...body };
+      if ("height" in payload)
+        payload.height =
+          payload.height === "" || payload.height == null
+            ? null
+            : Number(payload.height);
+      const p = await write("/plans", payload);
       await write(`/plans/${p.id}/actions`, { action: "SUBMIT" });
     }, "申请已提交");
   }
@@ -223,8 +247,8 @@ export default function Services({
             ...(manage ? [{ value: "source", label: "来源计划" }] : []),
           ]}
         />
-        <Button onClick={() => setCreate("admission")}>准入申请</Button>
-        <Button primary onClick={() => setCreate("plan")}>
+        <Button onClick={() => openApplication("admission")}>准入申请</Button>
+        <Button primary onClick={() => openApplication("plan")}>
           <Plus size={14} />
           飞行计划申请
         </Button>
@@ -375,120 +399,17 @@ export default function Services({
                         />
                       </section>
                       {flightPlan && (
-                        <section
-                          className="section plan-execution-tasks"
-                          data-testid="plan-execution-tasks"
-                          aria-label="计划关联执行任务"
-                        >
-                          <div className="section-title">
-                            <div>
-                              <h3>执行任务</h3>
-                              <span>
-                                已关联 {linkedTasks.data?.total ?? "—"} 条 ·
-                                每条任务独立分配、执行和验收
-                              </span>
-                            </div>
-                            <div className="action-strip">
-                              {navigate && (
-                                <Button
-                                  small
-                                  onClick={() =>
-                                    navigate("dispatch", { planId: current.id })
-                                  }
-                                >
-                                  查看全部任务 <ArrowRight size={12} />
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                          <p className="plan-execution-note">
-                            {current.status === "APPROVED"
-                              ? "计划已审批通过，安排的任务直接进入待分配，沿用审批结果。长期计划可按实际作业需要安排多次任务。"
-                              : "审核通过后即可在此安排执行任务；已有任务保留办理记录，未通过审批时不能开始新的飞行作业。"}
-                          </p>
-                          <DataTable
-                            rows={linkedTasks.data?.items || []}
-                            loading={linkedTasks.isLoading}
-                            error={linkedTasks.error}
-                            emptyTitle="尚未安排执行任务"
-                            emptyDescription={
-                              current.status === "APPROVED" && arrange
-                                ? "点击“安排执行任务”，填写本次作业时段后进入任务调度。"
-                                : "计划审核通过后，由需求部门或调度安排执行任务。"
-                            }
-                            columns={[
-                              {
-                                key: "title",
-                                label: "任务名称",
-                                render: (task) => (
-                                  <div className="name-cell">
-                                    <strong>{entityName(task)}</strong>
-                                    <small>
-                                      {String(task.number || task.id)}
-                                    </small>
-                                  </div>
-                                ),
-                              },
-                              {
-                                key: "startAt",
-                                label: "作业时段",
-                                render: (task) => (
-                                  <div>
-                                    {dateTime(task.startAt)}
-                                    <small>至 {dateTime(task.endAt)}</small>
-                                  </div>
-                                ),
-                              },
-                              {
-                                key: "deviceId",
-                                label: "执行设备",
-                                render: (task) =>
-                                  task.deviceId
-                                    ? resources.data?.items.some(
-                                        (resource) =>
-                                          resource.id === task.deviceId,
-                                      )
-                                      ? entityName(
-                                          resources.data?.items.find(
-                                            (resource) =>
-                                              resource.id === task.deviceId,
-                                          ),
-                                        )
-                                      : "设备档案不可见"
-                                    : "待分配",
-                              },
-                              {
-                                key: "status",
-                                label: "任务阶段",
-                                render: (task) => (
-                                  <Status status={task.status} />
-                                ),
-                              },
-                              {
-                                key: "operation",
-                                label: "操作",
-                                render: (task) =>
-                                  navigate && (
-                                    <Button
-                                      small
-                                      onClick={() =>
-                                        navigate("dispatch", {
-                                          taskId: task.id,
-                                          planId: current.id,
-                                        })
-                                      }
-                                    >
-                                      查看任务 <ArrowRight size={12} />
-                                    </Button>
-                                  ),
-                              },
-                            ]}
-                          />
-                          <ListFooter
-                            page={linkedTasks.data}
-                            onChange={linkedTasks.setPage}
-                          />
-                        </section>
+                        <PlanExecutionTasks
+                          plan={current}
+                          tasks={linkedTasks.data}
+                          loading={linkedTasks.isLoading}
+                          error={linkedTasks.error}
+                          resources={resources.data?.items || []}
+                          role={user.role}
+                          arrange={arrange}
+                          navigate={navigate}
+                          onPageChange={linkedTasks.setPage}
+                        />
                       )}
                       <Provenance record={current} />
                       <History path={`/plans/${current.id}`} />
@@ -628,18 +549,9 @@ export default function Services({
           key={taskPlan.id}
           plan={taskPlan}
           organizationName={
-            entityName(
-              organizations.data?.items.find(
-                (organization) => organization.id === taskPlan.organizationId,
-              ),
-            ) === "未命名"
+            taskOrganizationName === "未命名"
               ? "当前申请部门"
-              : entityName(
-                  organizations.data?.items.find(
-                    (organization) =>
-                      organization.id === taskPlan.organizationId,
-                  ),
-                )
+              : taskOrganizationName
           }
           onClose={() => setTaskPlan(null)}
           onCreated={(task) => {
@@ -647,6 +559,7 @@ export default function Services({
             navigate?.("dispatch", {
               taskId: task.id,
               planId: String(task.planId || taskPlan.id),
+              action: "assign",
             });
           }}
         />
@@ -679,51 +592,38 @@ export default function Services({
           }
           onClose={() => setCreate(null)}
         >
+          {create === "plan" && (
+            <div className="action-strip">
+              <Button onClick={() => setMoreOptions((value) => !value)}>
+                {moreOptions ? "收起更多选项" : "更多选项"}
+              </Button>
+              <span className="muted">高度、设备和已有任务可按需补充</span>
+            </div>
+          )}
           <EntityForm
+            notice={create === "plan" ? applicationNotice : undefined}
             onCancel={() => setCreate(null)}
             submitLabel="提交申请"
             fields={
               create === "consultation"
-                ? [
-                    {
-                      key: "title",
-                      label: "服务主题",
-                      required: true,
-                      wide: true,
-                    },
-                    {
-                      key: "kind",
-                      label: "服务类型",
-                      required: true,
-                      options: [
-                        { value: "CONSULTATION", label: "咨询" },
-                        { value: "TRAINING", label: "培训" },
-                      ],
-                    },
-                    {
-                      key: "region",
-                      label: "所属区域",
-                      required: true,
-                      options: REGIONS.map((v) => ({ value: v, label: v })),
-                    },
-                    {
-                      key: "description",
-                      label: "需求说明",
-                      type: "textarea",
-                      required: true,
-                      wide: true,
-                    },
-                  ]
-                : fields
+                ? consultationFields
+                : create === "plan"
+                  ? [
+                      ...basicFlightFields,
+                      ...(moreOptions ? optionalFlightFields : []),
+                    ]
+                  : admissionFields
             }
             initial={{
               organizationId: user.organizationId,
+              region: user.regions.length === 1 ? user.regions[0] : undefined,
               kind:
                 create === "consultation"
                   ? "CONSULTATION"
                   : create === "admission"
                     ? "DEVICE_ADMISSION"
                     : "DAILY",
+              ...(create === "plan" ? applicationSeed : {}),
             }}
             onSubmit={(body) =>
               create === "consultation"

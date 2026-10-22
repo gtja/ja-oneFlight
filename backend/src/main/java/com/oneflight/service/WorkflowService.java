@@ -1,17 +1,54 @@
 package com.oneflight.service;
 
-import com.oneflight.auth.*;
-import com.oneflight.common.*;
-import com.oneflight.domain.*;
-import com.oneflight.repository.*;
-import com.oneflight.web.Requests.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oneflight.auth.Role;
+import com.oneflight.auth.ScopeService;
+import com.oneflight.common.ApiException;
+import com.oneflight.common.PageResult;
+import com.oneflight.common.RecordProvenance;
+import com.oneflight.domain.BaseRecord;
+import com.oneflight.domain.Consultation;
+import com.oneflight.domain.FlightPlan;
+import com.oneflight.domain.IndustryCase;
+import com.oneflight.domain.Organization;
+import com.oneflight.domain.Resource;
+import com.oneflight.domain.Task;
+import com.oneflight.domain.UserAccount;
+import com.oneflight.repository.AuditEventRepository;
+import com.oneflight.repository.ConsultationRepository;
+import com.oneflight.repository.FlightPlanRepository;
+import com.oneflight.repository.IndustryCaseRepository;
+import com.oneflight.repository.OrganizationRepository;
+import com.oneflight.repository.PlatformSettingRepository;
+import com.oneflight.repository.ResourceRepository;
+import com.oneflight.repository.TaskRepository;
+import com.oneflight.repository.UserAccountRepository;
+import com.oneflight.web.Requests.ActionInput;
+import com.oneflight.web.Requests.CaseInput;
+import com.oneflight.web.Requests.ConsultationInput;
+import com.oneflight.web.Requests.OrganizationInput;
+import com.oneflight.web.Requests.PlanInput;
+import com.oneflight.web.Requests.PlanTaskInput;
+import com.oneflight.web.Requests.ResourceInput;
+import com.oneflight.web.Requests.TaskInput;
 
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -29,8 +66,8 @@ public class WorkflowService {
     private final AuditService audit;
     private final TaskAssignmentPolicy assignmentPolicy;
     private final FlightPlanTaskPolicy planTaskPolicy;
-    private final com.fasterxml.jackson.databind.ObjectMapper json =
-            new com.fasterxml.jackson.databind.ObjectMapper();
+    private final TaskAssignmentOptionsQuery assignmentOptionsQuery;
+    private final ObjectMapper json = new ObjectMapper();
 
     public WorkflowService(
             TaskRepository tasks,
@@ -45,7 +82,8 @@ public class WorkflowService {
             ScopeService scope,
             AuditService audit,
             TaskAssignmentPolicy assignmentPolicy,
-            FlightPlanTaskPolicy planTaskPolicy) {
+            FlightPlanTaskPolicy planTaskPolicy,
+            TaskAssignmentOptionsQuery assignmentOptionsQuery) {
         this.tasks = tasks;
         this.plans = plans;
         this.resources = resources;
@@ -59,6 +97,7 @@ public class WorkflowService {
         this.audit = audit;
         this.assignmentPolicy = assignmentPolicy;
         this.planTaskPolicy = planTaskPolicy;
+        this.assignmentOptionsQuery = assignmentOptionsQuery;
     }
 
     public TaskRepository tasks() {
@@ -98,7 +137,7 @@ public class WorkflowService {
     }
 
     public <T extends BaseRecord> T get(
-            org.springframework.data.jpa.repository.JpaRepository<T, String> repo, String id) {
+            JpaRepository<T, String> repo, String id) {
         T r = repo.findById(id).orElseThrow(ApiException::missing);
         scope.requireAccess(r);
         if (r instanceof Resource d) scope.requireResource(d);
@@ -142,6 +181,15 @@ public class WorkflowService {
         if (id != null && !id.isBlank()) scope.requireResource(get(resources, id));
     }
 
+    private void recordSave(String entityType, BaseRecord record, String id) {
+        String action = "UPDATE";
+        if (id == null) {
+            action = "BUSINESS_INITIALIZATION".equals(RecordProvenance.view(record.provenance).get("origin"))
+                    ? "INITIALIZE" : "CREATE";
+        }
+        audit.record(entityType, record, action, null);
+    }
+
     public Task saveTask(String id, TaskInput in) {
         scope.requireRole(Role.ADMIN, Role.DISPATCH, Role.DEPARTMENT, Role.PILOT);
         Task t = id == null ? new Task() : get(tasks, id);
@@ -174,7 +222,7 @@ public class WorkflowService {
         updateTaskPlan(t, in.planId());
         t.resultSummary = in.resultSummary();
         tasks.save(t);
-        audit.record("TASK", t, id == null && "BUSINESS_INITIALIZATION".equals(RecordProvenance.view(t.provenance).get("origin")) ? "INITIALIZE" : id == null ? "CREATE" : "UPDATE", null);
+        recordSave("TASK", t, id);
         return t;
     }
 
@@ -227,9 +275,9 @@ public class WorkflowService {
             List<Object> values = Arrays.asList(input.title(), input.description(), input.scene(),
                     input.priority() == null ? "NORMAL" : input.priority(),
                     input.startAt().toString(), input.endAt().toString());
-            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(json.writeValueAsBytes(values)));
-        } catch (java.security.NoSuchAlgorithmException | com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (NoSuchAlgorithmException | JsonProcessingException e) {
             throw new IllegalStateException("Unable to fingerprint task arrangement", e);
         }
     }
@@ -280,45 +328,7 @@ public class WorkflowService {
                 throw ApiException.invalid("所选资源不是执行设备");
         }
         List<Task> overlaps = assignmentOverlaps(task);
-        List<Resource> visibleDevices = resources.findAll().stream()
-                .filter(resource -> "DEVICE".equals(resource.kind) && scope.canRead(resource))
-                .sorted(Comparator.comparing(resource -> resource.title,
-                        Comparator.nullsLast(String::compareTo)))
-                .toList();
-        List<UserAccount> visiblePilots = users.findAll().stream()
-                .filter(user -> user.role == Role.PILOT && scope.canAccess(user.organizationId, null))
-                .sorted(Comparator.comparing(user -> user.displayName,
-                        Comparator.nullsLast(String::compareTo)))
-                .toList();
-        List<TaskAssignmentOptions.DeviceOption> deviceOptions = visibleDevices.stream()
-                .map(device -> {
-                    var reasons = assignmentPolicy.deviceReasons(task, device, overlaps);
-                    long compatiblePilots = reasons.isEmpty()
-                            ? visiblePilots.stream().filter(pilot -> assignmentPolicy
-                                    .pilotReasons(task, pilot, device, overlaps).isEmpty()).count()
-                            : 0L;
-                    return new TaskAssignmentOptions.DeviceOption(device.id, device.title,
-                            device.status, device.region, device.organizationId, reasons.isEmpty(),
-                            reasons, compatiblePilots);
-                }).toList();
-        Resource device = selectedDevice;
-        List<TaskAssignmentOptions.PilotOption> pilotOptions = visiblePilots.stream()
-                .map(pilot -> {
-                    var reasons = assignmentPolicy.pilotReasons(task, pilot, device, overlaps);
-                    return new TaskAssignmentOptions.PilotOption(pilot.id, pilot.displayName,
-                            pilot.organizationId, UserAccount.split(pilot.regions),
-                            reasons.isEmpty(), reasons);
-                }).toList();
-        var summary = new TaskAssignmentOptions.Summary(
-                deviceOptions.size(),
-                visibleDevices.stream().filter(resource -> "ACTIVE".equals(resource.status)).count(),
-                visibleDevices.stream().filter(resource -> "PENDING_CONFIRMATION".equals(resource.status)).count(),
-                deviceOptions.stream().filter(option -> option.eligible() && option.compatiblePilotCount() > 0).count(),
-                pilotOptions.size(),
-                pilotOptions.stream().filter(TaskAssignmentOptions.PilotOption::eligible).count());
-        return new TaskAssignmentOptions(task.id, task.status, task.region, task.organizationId,
-                task.startAt, task.endAt, device == null ? null : device.id,
-                summary, deviceOptions, pilotOptions, assignmentPolicy.taskReasons(task));
+        return assignmentOptionsQuery.forTask(task, selectedDevice, overlaps);
     }
 
     public Task taskAction(String id, ActionInput a) {
@@ -459,7 +469,7 @@ public class WorkflowService {
             }
         }
         plans.save(p);
-        audit.record("PLAN", p, id == null && "BUSINESS_INITIALIZATION".equals(RecordProvenance.view(p.provenance).get("origin")) ? "INITIALIZE" : id == null ? "CREATE" : "UPDATE", null);
+        recordSave("PLAN", p, id);
         return p;
     }
 
@@ -512,6 +522,25 @@ public class WorkflowService {
         if (!Set.of("DEVICE", "PERSON", "ROUTE", "AIRSPACE", "MAINTENANCE", "ALGORITHM_DATASET", "ALGORITHM_TRAINING").contains(in.kind()))
             throw ApiException.invalid("资源类型不正确");
         if (id == null) initialize(r, in.title(), in.region(), in.organizationId(), "ACTIVE");
+        else {
+            String organizationId = in.organizationId() == null || in.organizationId().isBlank()
+                    ? r.organizationId : in.organizationId().trim();
+            if (!Objects.equals(organizationId, r.organizationId)) {
+                Organization destination = organizations.findById(organizationId)
+                        .orElseThrow(() -> ApiException.invalid("组织不存在"));
+                if (!"ACTIVE".equals(destination.status))
+                    throw ApiException.invalid("所属组织已停用，请选择已启用的组织");
+            }
+            // Check both scopes before changing a managed entity; its old scope was checked by get.
+            Resource destinationScope = new Resource();
+            destinationScope.id = r.id;
+            destinationScope.kind = r.kind;
+            destinationScope.sourceDeviceId = r.sourceDeviceId;
+            destinationScope.organizationId = organizationId;
+            destinationScope.region = in.region();
+            scope.requireAccess(destinationScope);
+            r.organizationId = organizationId;
+        }
         r.title = in.title();
         r.region = in.region();
         scope.requireAccess(r);
@@ -553,7 +582,7 @@ public class WorkflowService {
             throw ApiException.invalid("扩展字段格式不正确");
         }
         resources.save(r);
-        audit.record("RESOURCE", r, id == null && "BUSINESS_INITIALIZATION".equals(RecordProvenance.view(r.provenance).get("origin")) ? "INITIALIZE" : id == null ? "CREATE" : "UPDATE", null);
+        recordSave("RESOURCE", r, id);
         return r;
     }
 
@@ -572,7 +601,7 @@ public class WorkflowService {
         c.taskId = in.taskId();
         c.conclusion = in.conclusion();
         cases.save(c);
-        audit.record("CASE", c, id == null && "BUSINESS_INITIALIZATION".equals(RecordProvenance.view(c.provenance).get("origin")) ? "INITIALIZE" : id == null ? "CREATE" : "UPDATE", null);
+        recordSave("CASE", c, id);
         return c;
     }
 
@@ -631,7 +660,7 @@ public class WorkflowService {
         c.kind = in.kind() == null ? "CONSULTATION" : in.kind();
         c.description = in.description();
         consultations.save(c);
-        audit.record("CONSULTATION", c, id == null && "BUSINESS_INITIALIZATION".equals(RecordProvenance.view(c.provenance).get("origin")) ? "INITIALIZE" : id == null ? "CREATE" : "UPDATE", null);
+        recordSave("CONSULTATION", c, id);
         return c;
     }
 

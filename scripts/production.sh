@@ -7,10 +7,15 @@ PRODUCTION_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PRODUCTION_COMPOSE_FILE="$PRODUCTION_ROOT/compose.production.yaml"
 PRODUCTION_ENV_FILE="$PRODUCTION_ROOT/.env"
 PRODUCTION_PROJECT_NAME=oneflight
+PRODUCTION_DATABASE_URL=''
+PRODUCTION_LOCAL_DATABASE=0
 PRODUCTION_COMPOSE=()
+PRODUCTION_GATEWAY=0
+PRODUCTION_SINGLE_IP=0
+PRODUCTION_COMPOSE_FILES=(-f "$PRODUCTION_COMPOSE_FILE")
 
 usage() {
-  printf 'Usage: scripts/production.sh [--env-file PATH] up|status|backup PRIVATE_DIRECTORY\n'
+  printf 'Usage: scripts/production.sh [--env-file PATH] [--gateway|--single-ip] up|status|backup PRIVATE_DIRECTORY\n'
   printf 'The backup directory must be new; backup briefly pauses a running app.\n'
 }
 
@@ -21,6 +26,14 @@ fail() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --single-ip)
+      PRODUCTION_SINGLE_IP=1
+      shift
+      ;;
+    --gateway)
+      PRODUCTION_GATEWAY=1
+      shift
+      ;;
     --env-file)
       [[ $# -ge 2 && -n "$2" ]] || { usage >&2; exit 2; }
       PRODUCTION_ENV_FILE=$2
@@ -47,9 +60,17 @@ esac
 [[ "$PRODUCTION_ENV_FILE" == /* ]] || PRODUCTION_ENV_FILE="$PWD/$PRODUCTION_ENV_FILE"
 PRODUCTION_ENV_FILE=$(cd "$(dirname "$PRODUCTION_ENV_FILE")" && printf '%s/%s' "$PWD" "$(basename "$PRODUCTION_ENV_FILE")")
 [[ -f "$PRODUCTION_COMPOSE_FILE" ]] || fail 'compose.production.yaml is missing from the deployment directory.'
+[[ "$PRODUCTION_GATEWAY:$PRODUCTION_SINGLE_IP" != 1:1 ]] || fail 'Choose --gateway or --single-ip.'
+if [[ "$PRODUCTION_SINGLE_IP" == 1 ]]; then
+  [[ -f "$PRODUCTION_ROOT/compose.single-ip.yaml" ]] || fail 'compose.single-ip.yaml is missing.'
+  PRODUCTION_COMPOSE_FILES+=(-f "$PRODUCTION_ROOT/compose.single-ip.yaml")
+elif [[ "$PRODUCTION_GATEWAY" == 1 ]]; then
+  [[ -f "$PRODUCTION_ROOT/compose.gateway.yaml" ]] || fail 'compose.gateway.yaml is missing.'
+  PRODUCTION_COMPOSE_FILES+=(-f "$PRODUCTION_ROOT/compose.gateway.yaml")
+fi
 
-# Only discover the project name here. Compose parses the actual values from the
-# explicit dotenv file; no value is evaluated, sourced or passed via host argv.
+# Discover only the project name and database mode. Compose parses the actual
+# dotenv values; no value is evaluated, sourced or passed via host argv.
 production_line_number=0
 while IFS= read -r production_line || [[ -n "$production_line" ]]; do
   production_line_number=$((production_line_number + 1))
@@ -60,7 +81,7 @@ while IFS= read -r production_line || [[ -n "$production_line" ]]; do
   production_key=${production_key#"${production_key%%[![:space:]]*}"}
   production_key=${production_key%"${production_key##*[![:space:]]}"}
   [[ "$production_key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || fail "Invalid dotenv key at line $production_line_number."
-  if [[ "$production_key" == COMPOSE_PROJECT_NAME ]]; then
+  if [[ "$production_key" == COMPOSE_PROJECT_NAME || "$production_key" == DB_URL ]]; then
     production_value=${production_line#*=}
     production_value=${production_value#"${production_value%%[![:space:]]*}"}
     production_value=${production_value%%[[:space:]]#*}
@@ -68,10 +89,19 @@ while IFS= read -r production_line || [[ -n "$production_line" ]]; do
     if [[ "$production_value" == \"*\" || "$production_value" == \'*\' ]]; then
       production_value=${production_value:1:${#production_value}-2}
     fi
-    PRODUCTION_PROJECT_NAME=${production_value:-oneflight}
+    if [[ "$production_key" == COMPOSE_PROJECT_NAME ]]; then
+      PRODUCTION_PROJECT_NAME=${production_value:-oneflight}
+    else
+      PRODUCTION_DATABASE_URL=$production_value
+    fi
   fi
 done < "$PRODUCTION_ENV_FILE"
 [[ "$PRODUCTION_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || fail 'COMPOSE_PROJECT_NAME must be a lowercase Compose project name.'
+case "$PRODUCTION_DATABASE_URL" in
+  ''|jdbc:mysql://mysql:3306/*)
+    PRODUCTION_LOCAL_DATABASE=1
+    ;;
+esac
 
 command -v docker >/dev/null 2>&1 || fail 'Docker CLI is required.'
 if production_version=$(docker compose version --short 2>/dev/null) && [[ "$production_version" =~ ^v?2\. ]]; then
@@ -86,6 +116,7 @@ production_compose() (
   # A private dotenv file is the single configuration source for this deployment.
   # Ambient credentials from a different project must not override its values.
   unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES
+  export COMPOSE_PROFILES=
   unset APP_VERSION TZ WEB_PORT MYSQL_DATABASE MYSQL_PORT MYSQL_ROOT_PASSWORD
   unset DB_URL DB_USERNAME DB_PASSWORD BOOTSTRAP_ADMIN_USERNAME BOOTSTRAP_ADMIN_PASSWORD BOOTSTRAP_ADMIN_DISPLAY_NAME
   unset UPLOAD_DIRECTORY SESSION_COOKIE_SECURE ALLOWED_ORIGINS MAP_STYLE_URL MAP_SATELLITE_URL MAP_TERRAIN_URL
@@ -94,8 +125,14 @@ production_compose() (
   unset SOURCE_ICOS_JDBC_URL SOURCE_ICOS_USERNAME SOURCE_ICOS_PASSWORD
   unset SOURCE_IDENTITY_JDBC_URL SOURCE_IDENTITY_USERNAME SOURCE_IDENTITY_PASSWORD
   unset SOURCE_MQTT_URL SOURCE_MQTT_USERNAME SOURCE_MQTT_PASSWORD SOURCE_ALGORITHM_ORIGIN SOURCE_TIMEOUT_SECONDS
+  unset ONEFLIGHT_AUTH_MODE ONEFLIGHT_LOCAL_MAINTENANCE_ENABLED ONEFLIGHT_FOUR_A_ORIGIN ONEFLIGHT_FOUR_A_TIMEOUT_SECONDS ONEFLIGHT_PUBLIC_ORIGIN
+  unset FLIGHT_CONTROL_MODE FLIGHT_CONTROL_ORIGIN FLIGHT_CONTROL_GATEWAY_SECRET GATEWAY_HTTP_PORT GATEWAY_HTTPS_PORT GATEWAY_TLS_DIRECTORY
+  unset DUSHU_UPSTREAM_HOST DUSHU_UPSTREAM_PORT DUSHU_TARGET_HOST
+  unset SERVER_IP FLIGHT_CONTROL_HTTP_PORT ONEFLIGHT_TRANSPORT_MODE ONEFLIGHT_BUNDLED_GATEWAY_ENABLED SESSION_COOKIE_NAME SESSION_COOKIE_PATH
+  set -- "${PRODUCTION_COMPOSE_FILES[@]}" "$@"
+  if [[ "$PRODUCTION_LOCAL_DATABASE" == 1 ]]; then set -- --profile local-database "$@"; fi
   "${PRODUCTION_COMPOSE[@]}" --project-directory "$PRODUCTION_ROOT" --env-file "$PRODUCTION_ENV_FILE" \
-    --project-name "$PRODUCTION_PROJECT_NAME" -f "$PRODUCTION_COMPOSE_FILE" "$@"
+    --project-name "$PRODUCTION_PROJECT_NAME" "$@"
 )
 
 production_compose config --quiet
@@ -122,6 +159,7 @@ production_checksums() {
 }
 
 production_backup() {
+  [[ "$PRODUCTION_LOCAL_DATABASE" == 1 ]] || fail 'This backup supports only local MySQL; back up the external MySQL server separately. No app was paused.'
   local production_destination=$1 production_parent production_name
   local production_app_id production_mysql_id production_app_state
   local production_app_running production_app_paused production_app_image production_mysql_image
@@ -187,6 +225,12 @@ production_backup() {
 
   cp "$PRODUCTION_ENV_FILE" "$production_destination/configuration.env"
   cp "$PRODUCTION_COMPOSE_FILE" "$production_destination/compose.production.yaml"
+  if [[ "$PRODUCTION_GATEWAY" == 1 ]]; then
+    cp "$PRODUCTION_ROOT/compose.gateway.yaml" "$production_destination/compose.gateway.yaml"
+  fi
+  if [[ "$PRODUCTION_SINGLE_IP" == 1 ]]; then
+    cp "$PRODUCTION_ROOT/compose.single-ip.yaml" "$production_destination/compose.single-ip.yaml"
+  fi
   printf 'app %s\nmysql %s\n' "$production_app_image" "$production_mysql_image" > "$production_destination/images.txt"
   mv "$production_destination/database.sql.gz.partial" "$production_destination/database.sql.gz"
   mv "$production_destination/uploads.tar.gz.partial" "$production_destination/uploads.tar.gz"
@@ -205,7 +249,15 @@ production_backup() {
 case "$PRODUCTION_ACTION" in
   up)
     production_require_loaded_images
-    production_compose up -d --no-build --pull never --wait --wait-timeout 300 mysql app
+    production_services=(app)
+    if [[ "$PRODUCTION_LOCAL_DATABASE" == 1 ]]; then
+      production_compose up -d --no-build --pull never --wait --wait-timeout 300 mysql
+      production_services=(mysql app)
+    fi
+    if [[ "$PRODUCTION_GATEWAY" == 1 ]]; then
+      production_services+=(gateway)
+    fi
+    production_compose up -d --no-build --pull never --wait --wait-timeout 300 "${production_services[@]}"
     printf 'Production project is healthy: %s\n' "$PRODUCTION_PROJECT_NAME"
     ;;
   status) production_compose ps --all ;;

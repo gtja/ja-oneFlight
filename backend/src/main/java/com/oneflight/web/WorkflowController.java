@@ -1,6 +1,5 @@
 package com.oneflight.web;
 
-import com.oneflight.auth.*;
 import com.oneflight.common.*;
 import com.oneflight.domain.*;
 import com.oneflight.service.*;
@@ -16,84 +15,16 @@ import java.util.*;
 @RequestMapping("/api/v1")
 public class WorkflowController {
     private final WorkflowService service;
-    private final ScopeService scope;
+    private final WorkflowRecordPage recordPage;
     private final com.oneflight.integration.SourceExtensions extensions;
 
     public WorkflowController(
             WorkflowService service,
-            ScopeService scope,
+            WorkflowRecordPage recordPage,
             com.oneflight.integration.SourceExtensions extensions) {
         this.service = service;
-        this.scope = scope;
+        this.recordPage = recordPage;
         this.extensions = extensions;
-    }
-
-    private PageResult<Map<String, Object>> page(
-            List<? extends BaseRecord> all,
-            int page,
-            int pageSize,
-            String query,
-            String status,
-            String kind,
-            String scene) {
-        return PageResult.of(
-                all.stream()
-                        .filter(service::visible)
-                        .filter(x -> status == null || status.isBlank() || status.equals(x.status))
-                        .filter(record -> matches(record, query))
-                        .filter(
-                                x ->
-                                        kind == null
-                                                || kind.isBlank()
-                                                || (x instanceof Resource d && kind.equals(d.kind))
-                                                || (x instanceof FlightPlan p
-                                                        && kind.equals(p.kind))
-                                                || (x instanceof Consultation c
-                                                        && kind.equals(c.kind)))
-                        .filter(
-                                x ->
-                                        scene == null
-                                                || scene.isBlank()
-                                                || (x instanceof Task t && scene.equals(t.scene))
-                                                || (x instanceof IndustryCase c
-                                                        && scene.equals(c.scene)))
-                        .sorted(Comparator.comparing((BaseRecord x) -> x.createdAt).reversed())
-                        .map(BaseRecord::view)
-                        .toList(),
-                page,
-                pageSize);
-    }
-
-    private boolean matches(BaseRecord record, String query) {
-        if (query == null || query.isBlank()) return true;
-        List<String> fields = new ArrayList<>();
-        fields.add(record.title);
-        fields.add(record.id);
-        fields.add(record.region);
-        if (record instanceof Task task) {
-            fields.add(task.scene);
-            fields.add(task.description);
-            if (task.planId != null) service.plans().findById(task.planId)
-                    .filter(service::visible).ifPresent(plan -> {
-                        fields.add(plan.title);
-                        fields.add(plan.id);
-                    });
-        }
-        if (record instanceof Resource resource) {
-            fields.add(resource.model);
-            fields.add(resource.sn);
-            fields.add(resource.sourceDeviceId);
-        }
-        if (record instanceof IndustryCase industryCase) {
-            fields.add(industryCase.scene);
-            fields.add(industryCase.description);
-        }
-        if (record instanceof FlightPlan plan) fields.add(plan.scope);
-        if (record instanceof Consultation consultation) fields.add(consultation.description);
-        String keyword = query.trim().toLowerCase(Locale.ROOT);
-        return fields.stream()
-                .filter(Objects::nonNull)
-                .anyMatch(field -> field.toLowerCase(Locale.ROOT).contains(keyword));
     }
 
     @GetMapping("/tasks")
@@ -108,7 +39,7 @@ public class WorkflowController {
             @RequestParam(required = false) String planId) {
         if (planId != null && !planId.isBlank()) service.get(service.plans(), planId);
         return ApiResponse.ok(
-                page(
+                recordPage.page(
                         planId == null || planId.isBlank() ? service.tasks().findAll()
                                 : service.tasks().findByPlanId(planId),
                         page,
@@ -165,7 +96,7 @@ public class WorkflowController {
             @RequestParam(required = false) String kind,
             @RequestParam(required = false) String scene) {
         return ApiResponse.ok(
-                page(
+                recordPage.page(
                         service.plans().findAll(),
                         page,
                         pageSize,
@@ -229,7 +160,7 @@ public class WorkflowController {
             @RequestParam(required = false) String kind,
             @RequestParam(required = false) String scene) {
         return ApiResponse.ok(
-                page(
+                recordPage.page(
                         service.resources().findAll(),
                         page,
                         pageSize,
@@ -266,7 +197,7 @@ public class WorkflowController {
             @RequestParam(required = false) String scene,
             @RequestParam(required = false) String excludeStatus) {
         return ApiResponse.ok(
-                page(
+                recordPage.page(
                         service.cases().findAll().stream()
                                 .filter(
                                         record ->
@@ -323,7 +254,7 @@ public class WorkflowController {
             @RequestParam(required = false) String kind,
             @RequestParam(required = false) String scene) {
         return ApiResponse.ok(
-                page(
+                recordPage.page(
                         service.consultations().findAll(),
                         page,
                         pageSize,
@@ -374,7 +305,7 @@ public class WorkflowController {
             @RequestParam(required = false) String kind,
             @RequestParam(required = false) String scene) {
         return ApiResponse.ok(
-                page(
+                recordPage.page(
                         service.organizations().findAll(),
                         page,
                         pageSize,

@@ -1,16 +1,12 @@
 import { useEffect, useState } from "react";
-import {
-  Database,
-  KeyRound,
-  Plus,
-  RefreshCw,
-  ShieldCheck,
-  Users,
-} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Database, KeyRound, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { api, useCatalog, useData, useList, write, type Entity } from "../api";
 import { dateTime, REGIONS, ROLE_LABELS } from "../domain";
 import { useUser } from "../context";
 import { useMutationFeedback } from "../components/Workflow";
+import type { AuthOptions } from "../components/Login";
+import FourAAccountPicker from "../components/FourAAccountPicker";
 import {
   Button,
   DataTable,
@@ -18,11 +14,17 @@ import {
   Empty,
   EntityForm,
   Modal,
-  Select,
   Status,
   Tabs,
   type Field,
 } from "../components/UI";
+function scopeValues(value: unknown): string[] {
+  return String(value || "")
+    .split(/[,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export default function Settings({
   initialTab,
   userId,
@@ -33,6 +35,16 @@ export default function Settings({
   const user = useUser();
   const admin = user.role === "ADMIN";
   const operator = admin || user.role === "DISPATCH";
+  const authOptions = useQuery({
+    queryKey: ["auth-options"],
+    queryFn: () => api<AuthOptions>("/auth/options"),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const fourAManaged =
+    authOptions.data?.mode === "4a" || authOptions.data?.accountsMode === "4a";
+  const accountManagementReady = !!authOptions.data && !authOptions.error;
+  const localAccountCreation = accountManagementReady && !fourAManaged;
   const [tab, setTab] = useState(
     operator && initialTab === "users"
       ? "users"
@@ -44,6 +56,7 @@ export default function Settings({
   );
   const [form, setForm] = useState<string | null>(null);
   const [editUser, setEditUser] = useState<Entity | null>(null);
+  const [fourAAccountPicker, setFourAAccountPicker] = useState(false);
   const accounts = useCatalog("/users", {}, tab === "users");
   const organizations = useCatalog("/organizations", {}, tab === "users");
   const integrations = useData<(Entity & { state: string; message: string })[]>(
@@ -65,7 +78,13 @@ export default function Settings({
     (account) => account.id === userId,
   );
   useEffect(() => {
-    if (!userId || openedUserId === userId || !accounts.data) return;
+    if (
+      !userId ||
+      openedUserId === userId ||
+      !accounts.data ||
+      !accountManagementReady
+    )
+      return;
     setOpenedUserId(userId);
     const account = accounts.data.items.find((item) => item.id === userId);
     if (!account) {
@@ -76,7 +95,7 @@ export default function Settings({
       setEditUser(account);
       setForm("user");
     }
-  }, [accounts.data, admin, openedUserId, userId]);
+  }, [accounts.data, admin, accountManagementReady, openedUserId, userId]);
   const [importing, setImporting] = useState(false);
   const coverage = useData<
     Record<string, { total: number | null; status: string; message: string }>
@@ -85,7 +104,7 @@ export default function Settings({
   const userFields: Field[] = [
     {
       key: "enabled",
-      label: "账号状态",
+      label: fourAManaged ? "平台业务权限状态" : "账号状态",
       required: true,
       options: [
         { value: "true", label: "启用" },
@@ -248,7 +267,8 @@ export default function Settings({
               ]}
             />
             <p className="footnote">
-              导入保留来源信息与原始状态。人员资质、设备可调度状态需本地确认，来源账号不会自动获得本平台登录权限。
+              导入保留来源信息与原始状态。人员资质、设备可调度状态需确认，平台应用访问权限由
+              4A 管理。
             </p>
           </section>
           <div className="integration-grid">
@@ -282,28 +302,56 @@ export default function Settings({
           <div className="table-toolbar">
             <div>
               <h2>组织与岗位权限</h2>
-              <p>角色权限与组织、区域、设备范围共同生效</p>
+              <p>
+                {fourAManaged
+                  ? "4A 负责登录身份；平台岗位、组织及业务范围在此配置。"
+                  : "角色权限与组织、区域、设备范围共同生效"}
+              </p>
             </div>
-            {admin && (
+            {admin && accountManagementReady && (
               <>
                 <Button onClick={() => setForm("organization")}>
                   <Plus size={13} />
                   新增组织
                 </Button>
-                <Button
-                  primary
-                  onClick={() => {
-                    setEditUser(null);
-                    setForm("user");
-                  }}
-                >
-                  <Plus size={13} />
-                  新增账号
-                </Button>
+                {fourAManaged && (
+                  <Button primary onClick={() => setFourAAccountPicker(true)}>
+                    <Plus size={13} />
+                    关联 4A 账号
+                  </Button>
+                )}
+                {localAccountCreation && (
+                  <Button
+                    primary
+                    onClick={() => {
+                      setEditUser(null);
+                      setForm("user");
+                    }}
+                  >
+                    <Plus size={13} />
+                    新增账号
+                  </Button>
+                )}
               </>
             )}
           </div>
           {error && <p className="form-error">{error}</p>}
+          {fourAManaged && (
+            <p className="notice" role="note">
+              平台管理员可直接关联 4A
+              账号并配置岗位、组织及业务范围，无需该账号先登录本平台。
+              已关联账号可点击账号行调整业务权限；身份信息及 oneflight
+              应用登录权限仍由 4A 管理。
+            </p>
+          )}
+          {authOptions.error && (
+            <div role="alert">
+              <p className="form-error">登录配置读取失败，账号管理暂不可用。</p>
+              <Button onClick={() => void authOptions.refetch()}>
+                重试读取登录配置
+              </Button>
+            </div>
+          )}
           {targetUser && (
             <p className="notice">
               {String(targetUser.displayName)} · 可见 / 执行区域：
@@ -322,10 +370,10 @@ export default function Settings({
           )}
           <DataTable
             rows={accounts.data?.items || []}
-            loading={accounts.isLoading}
+            loading={accounts.isLoading || authOptions.isPending}
             error={accounts.error}
             onRow={
-              admin
+              admin && accountManagementReady
                 ? (r) => {
                     setEditUser(r);
                     setForm("user");
@@ -335,10 +383,22 @@ export default function Settings({
             columns={[
               { key: "displayName", label: "姓名" },
               { key: "username", label: "登录账号" },
+              ...(fourAManaged
+                ? [
+                    {
+                      key: "identitySource",
+                      label: "账号来源",
+                      render: () => "4A",
+                    },
+                  ]
+                : []),
               {
                 key: "role",
                 label: "岗位",
-                render: (r) => ROLE_LABELS[String(r.role)] || String(r.role),
+                render: (r) =>
+                  r.businessAccessAssigned === false
+                    ? "待配置"
+                    : ROLE_LABELS[String(r.role)] || String(r.role),
               },
               {
                 key: "organizationId",
@@ -347,7 +407,9 @@ export default function Settings({
                   String(
                     organizations.data?.items.find(
                       (o) => o.id === r.organizationId,
-                    )?.title || r.organizationId,
+                    )?.title ||
+                      r.organizationId ||
+                      "待配置",
                   ),
               },
               {
@@ -355,31 +417,39 @@ export default function Settings({
                 label: "可见区域",
                 render: (r) =>
                   Array.isArray(r.regions)
-                    ? r.regions.join("、")
+                    ? r.regions.join("、") ||
+                      (r.businessAccessAssigned === false
+                        ? "待配置"
+                        : "本组织范围")
                     : "按组织范围",
               },
               {
                 key: "enabled",
-                label: "账号状态",
-                render: (r) => (
-                  <Status status={r.enabled ? "ACTIVE" : "INACTIVE"} />
-                ),
+                label: fourAManaged ? "业务权限状态" : "账号状态",
+                render: (r) =>
+                  r.businessAccessAssigned === false ? (
+                    "待配置"
+                  ) : (
+                    <Status status={r.enabled ? "ACTIVE" : "INACTIVE"} />
+                  ),
               },
             ]}
           />
-          <div className="section">
-            <h3>可分配设备</h3>
-            <p className="muted">
-              创建飞手账号时，将对应设备 ID 填入授权范围。
-            </p>
-            {resources.data?.items.map((r) => (
-              <div className="device-permission" key={r.id}>
-                <strong>{r.title}</strong>
-                <code>{r.id}</code>
-                <small>{r.region}</small>
-              </div>
-            ))}
-          </div>
+          {accountManagementReady && (
+            <div className="section">
+              <h3>可分配设备</h3>
+              <p className="muted">
+                配置飞手业务权限时，将对应设备 ID 填入授权范围。
+              </p>
+              {resources.data?.items.map((r) => (
+                <div className="device-permission" key={r.id}>
+                  <strong>{r.title}</strong>
+                  <code>{r.id}</code>
+                  <small>{r.region}</small>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       ) : tab === "audit" ? (
         <>
@@ -438,6 +508,9 @@ export default function Settings({
           ) : (
             <Details
               items={[
+                ...(fourAManaged
+                  ? [{ label: "账号来源", value: "4A 统一账号" }]
+                  : []),
                 { label: "当前岗位", value: ROLE_LABELS[user.role] },
                 { label: "所属组织", value: user.organizationId },
                 {
@@ -453,108 +526,143 @@ export default function Settings({
           )}
         </>
       )}
-      {form && (
-        <Modal
-          title={
-            form === "user"
-              ? editUser
-                ? "编辑账号与范围"
-                : "新增本地账号"
-              : form === "organization"
-                ? "新增组织"
-                : "修改平台配置"
-          }
-          onClose={() => setForm(null)}
-        >
-          <EntityForm
-            fields={
-              form === "user"
-                ? userFields
-                : form === "organization"
-                  ? [
-                      {
-                        key: "title",
-                        label: "组织名称",
-                        required: true,
-                        wide: true,
-                      },
-                      {
-                        key: "region",
-                        label: "所属区域",
-                        options: REGIONS.map((v) => ({ value: v, label: v })),
-                      },
-                      { key: "contact", label: "联系信息" },
-                    ]
-                  : [{ key: "value", label: "配置值", wide: true }]
-            }
-            initial={
-              form === "user" && editUser
-                ? {
-                    ...editUser,
-                    enabled: String(editUser.enabled ?? true),
-                    organizationIds: (
-                      (editUser.organizationIds as string[]) || []
-                    ).join(","),
-                    regions: ((editUser.regions as string[]) || []).join(","),
-                    deviceIds: ((editUser.deviceIds as string[]) || []).join(
-                      ",",
-                    ),
-                  }
-                : form === "user"
-                  ? {
-                      role: "DEPARTMENT",
-                      regions: REGIONS.join(","),
-                      enabled: "true",
-                    }
-                  : {
-                      value:
-                        settings.data?.items.find((r) => r.id === form)
-                          ?.value || "",
-                    }
-            }
-            onCancel={() => setForm(null)}
-            onSubmit={(body) => {
-              if (form === "user") {
-                const data: Record<string, unknown> = {
-                  ...body,
-                  regions: String(body.regions || "")
-                    .split(/[,，]/)
-                    .map((v) => v.trim())
-                    .filter(Boolean),
-                  deviceIds: String(body.deviceIds || "")
-                    .split(/[,，]/)
-                    .map((v) => v.trim())
-                    .filter(Boolean),
-                  enabled: body.enabled !== "false",
-                  organizationIds: String(body.organizationIds || "")
-                    .split(/[,，]/)
-                    .map((v) => v.trim())
-                    .filter(Boolean),
-                };
-                if (editUser && !data.password) delete data.password;
-                return mutate(
-                  () =>
-                    write(
-                      `/users${editUser ? `/${editUser.id}` : ""}`,
-                      data,
-                      editUser ? "PUT" : "POST",
-                    ),
-                  "账号权限已保存",
-                );
-              }
-              if (form === "organization")
-                return mutate(
-                  () => write("/organizations", body),
-                  "组织已创建",
-                );
-              return mutate(
-                () => write(`/settings/${form}`, body, "PUT"),
-                "平台配置已保存",
-              );
+      {fourAAccountPicker &&
+        admin &&
+        fourAManaged &&
+        accountManagementReady && (
+          <FourAAccountPicker
+            onClose={() => setFourAAccountPicker(false)}
+            onLinked={(account) => {
+              setFourAAccountPicker(false);
+              setEditUser(account);
+              setForm("user");
             }}
           />
-        </Modal>
-      )}
+        )}
+      {form &&
+        ((form !== "user" && form !== "organization") ||
+          (accountManagementReady &&
+            (form !== "user" || !!editUser || localAccountCreation))) && (
+          <Modal
+            title={
+              form === "user"
+                ? editUser
+                  ? fourAManaged
+                    ? "配置平台业务权限"
+                    : "编辑账号与范围"
+                  : "新增本地账号"
+                : form === "organization"
+                  ? "新增组织"
+                  : "修改平台配置"
+            }
+            onClose={() => setForm(null)}
+          >
+            <EntityForm
+              notice={
+                form === "user" && editUser && fourAManaged
+                  ? `正在为 ${String(editUser.displayName || editUser.username)}（${String(editUser.username)}）配置平台业务权限。身份信息由 4A 管理。`
+                  : undefined
+              }
+              fields={
+                form === "user"
+                  ? userFields.filter(
+                      (field) =>
+                        !fourAManaged ||
+                        !["username", "displayName", "password"].includes(
+                          field.key,
+                        ),
+                    )
+                  : form === "organization"
+                    ? [
+                        {
+                          key: "title",
+                          label: "组织名称",
+                          required: true,
+                          wide: true,
+                        },
+                        {
+                          key: "region",
+                          label: "所属区域",
+                          options: REGIONS.map((v) => ({ value: v, label: v })),
+                        },
+                        { key: "contact", label: "联系信息" },
+                      ]
+                    : [{ key: "value", label: "配置值", wide: true }]
+              }
+              initial={
+                form === "user" && editUser
+                  ? {
+                      ...editUser,
+                      role:
+                        editUser.businessAccessAssigned === false
+                          ? ""
+                          : editUser.role,
+                      organizationId:
+                        editUser.businessAccessAssigned === false
+                          ? ""
+                          : editUser.organizationId,
+                      enabled: String(editUser.enabled ?? true),
+                      organizationIds: (
+                        (editUser.organizationIds as string[]) || []
+                      ).join(","),
+                      regions: ((editUser.regions as string[]) || []).join(","),
+                      deviceIds: ((editUser.deviceIds as string[]) || []).join(
+                        ",",
+                      ),
+                    }
+                  : form === "user"
+                    ? {
+                        role: "DEPARTMENT",
+                        regions: REGIONS.join(","),
+                        enabled: "true",
+                      }
+                    : {
+                        value:
+                          settings.data?.items.find((r) => r.id === form)
+                            ?.value || "",
+                      }
+              }
+              onCancel={() => setForm(null)}
+              onSubmit={(body) => {
+                if (form === "user") {
+                  const data: Record<string, unknown> = {
+                    ...(fourAManaged
+                      ? Object.fromEntries(
+                          ["role", "organizationId"].map((key) => [
+                            key,
+                            body[key],
+                          ]),
+                        )
+                      : body),
+                    regions: scopeValues(body.regions),
+                    deviceIds: scopeValues(body.deviceIds),
+                    enabled: body.enabled !== "false",
+                    organizationIds: scopeValues(body.organizationIds),
+                  };
+                  if (editUser && !data.password) delete data.password;
+                  return mutate(
+                    () =>
+                      write(
+                        `/users${editUser ? `/${editUser.id}${fourAManaged ? "/permissions" : ""}` : ""}`,
+                        data,
+                        editUser ? "PUT" : "POST",
+                      ),
+                    "账号权限已保存",
+                  );
+                }
+                if (form === "organization")
+                  return mutate(
+                    () => write("/organizations", body),
+                    "组织已创建",
+                  );
+                return mutate(
+                  () => write(`/settings/${form}`, body, "PUT"),
+                  "平台配置已保存",
+                );
+              }}
+            />
+          </Modal>
+        )}
     </div>
   );
 }

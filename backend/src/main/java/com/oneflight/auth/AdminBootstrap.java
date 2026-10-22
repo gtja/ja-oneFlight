@@ -17,11 +17,12 @@ public class AdminBootstrap {
             OrganizationRepository organizations,
             PasswordEncoder encoder,
             TransactionTemplate tx,
+            FourAProperties fourA,
             @Value("${oneflight.bootstrap.username:admin}") String username,
             @Value("${oneflight.bootstrap.password:}") String password,
             @Value("${oneflight.bootstrap.display-name:平台管理员}") String displayName) {
         return args -> {
-            if (password.isBlank() || users.count() > 0) return;
+            if (fourA.isFourA() || password.isBlank() || users.count() > 0) return;
             if (password.length() < 12) throw new IllegalStateException("首次管理员密码至少12位");
             tx.executeWithoutResult(
                     status -> {

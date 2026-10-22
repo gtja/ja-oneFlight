@@ -10,6 +10,7 @@ public record TaskAssignmentOptions(
         String taskStatus,
         String region,
         String organizationId,
+        String organizationName,
         Instant startAt,
         Instant endAt,
         String selectedDeviceId,
@@ -32,6 +33,7 @@ public record TaskAssignmentOptions(
             String status,
             String region,
             String organizationId,
+            String organizationName,
             boolean eligible,
             List<TaskAssignmentPolicy.Reason> reasons,
             long compatiblePilotCount) {}
@@ -40,6 +42,7 @@ public record TaskAssignmentOptions(
             String id,
             String title,
             String organizationId,
+            String organizationName,
             Set<String> regions,
             boolean eligible,
             List<TaskAssignmentPolicy.Reason> reasons) {}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { Navigate } from "../navigation";
 import {
   ArrowRight,
   Boxes,
@@ -22,12 +23,20 @@ import { useUser } from "../context";
 import { Provenance, useMutationFeedback } from "../components/Workflow";
 import SourceRecords from "../components/SourceRecords";
 import DeviceFlightHistory from "../components/DeviceFlightHistory";
-import { getFlightTotals, summarizeFlightTotals } from "../flightStatistics";
+import { summarizeFlightTotals } from "../flightStatistics";
+import {
+  resourceKinds as kinds,
+  sourceCatalogs,
+  deviceTypeOptions,
+  schedulingLabel,
+  resourceFields,
+} from "./resources/config";
+import { resourceColumns } from "./resources/columns";
+import { resourceDetails, resourceMetadataDetails } from "./resources/details";
 import {
   Button,
   DataTable,
   Details,
-  Empty,
   EntityForm,
   ListFooter,
   Modal,
@@ -36,24 +45,8 @@ import {
   Select,
   Status,
   Unavailable,
-  type Field,
 } from "../components/UI";
-const kinds: Record<string, string> = {
-  DEVICE: "设备资源",
-  PERSON: "人员资源",
-  ROUTE: "航线资源",
-  AIRSPACE: "空域资源",
-  MAINTENANCE: "设备维护",
-  FLIGHT: "飞行记录",
-  MEDIA: "成果媒体",
-};
-const schedulingLabel = (status?: string) =>
-  status === "ACTIVE"
-    ? "可调度"
-    : status === "PENDING_CONFIRMATION"
-      ? "待确认"
-      : undefined;
-export default function Resources() {
+export default function Resources({ navigate }: { navigate?: Navigate }) {
   const user = useUser();
   const manage = ["ADMIN", "DISPATCH"].includes(user.role);
   const [kind, setKind] = useState("DEVICE");
@@ -65,10 +58,13 @@ export default function Resources() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Entity | null>(null);
   const [form, setForm] = useState<Entity | boolean | null>(null);
+  const sourceCatalogKind = manage && remote ? sourceCatalogs[kind] : undefined;
   const local = useList(
     "/resources",
     { kind, keyword: search },
-    !["FLIGHT", "MEDIA"].includes(kind) && !(kind === "DEVICE" && remote),
+    !["FLIGHT", "MEDIA"].includes(kind) &&
+      !(kind === "DEVICE" && remote) &&
+      !sourceCatalogKind,
   );
   const source = useList(
     "/devices",
@@ -87,17 +83,20 @@ export default function Resources() {
     { kind: "DEVICE" },
     kind === "DEVICE",
   );
-  const dispatchBySource = new Map(
-    (dispatchCatalog.data?.items || [])
-      .filter((resource) => !!resource.sourceDeviceId)
-      .map((resource) => [String(resource.sourceDeviceId), resource]),
-  );
   const connectedIds = new Set(
     (catalog.data?.items || []).map((device) => device.id),
   );
-  const connectedArchives = (dispatchCatalog.data?.items || []).filter(
-    (resource) => connectedIds.has(String(resource.sourceDeviceId)),
-  );
+  const dispatchBySource = new Map<string, Entity>();
+  let schedulableDevices = 0;
+  let pendingDevices = 0;
+  for (const resource of dispatchCatalog.data?.items || []) {
+    const sourceDeviceId = String(resource.sourceDeviceId);
+    if (resource.sourceDeviceId) dispatchBySource.set(sourceDeviceId, resource);
+    if (connectedIds.has(sourceDeviceId)) {
+      if (resource.status === "ACTIVE") schedulableDevices += 1;
+      if (resource.status === "PENDING_CONFIRMATION") pendingDevices += 1;
+    }
+  }
   const dispatchCountsReady = !!catalog.data && !!dispatchCatalog.data;
   const selectedArchive =
     kind === "DEVICE" && remote && selected
@@ -138,6 +137,7 @@ export default function Resources() {
         : remote && kind === "DEVICE"
           ? source
           : local;
+  const normalizedSearch = search.trim().toLowerCase();
   const rows = (query.data?.items || []).filter(
     (r) =>
       (kind !== "FLIGHT" && kind !== "MEDIA") ||
@@ -145,91 +145,16 @@ export default function Resources() {
       [entityName(r), r.id, r.deviceId, r.sortieNo, r.fileName].some((v) =>
         String(v ?? "")
           .toLowerCase()
-          .includes(search.trim().toLowerCase()),
+          .includes(normalizedSearch),
       ),
   );
-  const fields: Field[] = [
-    {
-      key: "organizationId",
-      label: "所属组织",
-      required: true,
-      options: (organizations.data?.items || []).map((r) => ({
-        value: r.id,
-        label: entityName(r),
-      })),
-    },
-    { key: "title", label: "资源名称", required: true, wide: true },
-    {
-      key: "region",
-      label: "所属区域",
-      required: true,
-      options: REGIONS.map((v) => ({ value: v, label: v })),
-    },
-    {
-      key: "status",
-      label: kind === "DEVICE" ? "调度状态" : "资源状态",
-      required: true,
-      options: [
-        { value: "ACTIVE", label: kind === "DEVICE" ? "可调度" : "可用" },
-        { value: "PENDING_CONFIRMATION", label: "待确认" },
-        { value: "MAINTENANCE", label: "维护中" },
-        { value: "INACTIVE", label: "停用" },
-      ],
-    },
-    { key: "model", label: kind === "PERSON" ? "岗位 / 资质" : "型号 / 类型" },
-    { key: "description", label: "能力与备注", type: "textarea", wide: true },
-    ...(kind === "DEVICE"
-      ? [
-          {
-            key: "sourceDeviceId",
-            label: "关联来源设备",
-            options: (catalog.data?.items || [])
-              .filter((device) => {
-                const existing = dispatchBySource.get(device.id);
-                return (
-                  !existing ||
-                  (typeof form === "object" && existing.id === form?.id)
-                );
-              })
-              .map((r) => ({ value: r.id, label: entityName(r) })),
-          },
-          { key: "sn", label: "设备序列号" },
-          { key: "longitude", label: "经度（WGS84）", type: "number" },
-          { key: "latitude", label: "纬度（WGS84）", type: "number" },
-        ]
-      : kind === "ROUTE" || kind === "AIRSPACE"
-        ? [
-            {
-              key: "geometry",
-              label: kind === "ROUTE" ? "航线绘制" : "空域边界绘制",
-              type: "geometry",
-              geometryMode: (kind === "ROUTE" ? "ROUTE" : "AIRSPACE") as
-                "ROUTE" | "AIRSPACE",
-              required: true,
-              wide: true,
-              placeholder: '{"type":"Polygon","coordinates":[…]}',
-            },
-          ]
-        : kind === "MAINTENANCE"
-          ? [
-              {
-                key: "deviceId",
-                label: "维护设备",
-                required: true,
-                options: (catalog.data?.items || []).map((r) => ({
-                  value: r.id,
-                  label: entityName(r),
-                })),
-              },
-              {
-                key: "maintenanceAt",
-                label: "维护日期",
-                type: "date",
-                required: true,
-              },
-            ]
-          : []),
-  ];
+  const fields = resourceFields({
+    kind,
+    organizations: organizations.data?.items || [],
+    devices: catalog.data?.items || [],
+    dispatchBySource,
+    form,
+  });
   return (
     <div className="page">
       <PageHeader title="资源管理" subtitle="设备、人员与数据档案统一管理" />
@@ -266,7 +191,9 @@ export default function Resources() {
             className={kind === "PERSON" ? "active" : ""}
             onClick={() => {
               setKind("PERSON");
-              setRemote(false);
+              setRemote(manage);
+              setSearch("");
+              setSelected(null);
             }}
           >
             人员档案
@@ -281,7 +208,7 @@ export default function Resources() {
               key={k}
               onClick={() => {
                 setKind(k);
-                setRemote(false);
+                setRemote(manage && !!sourceCatalogs[k]);
                 setSearch("");
                 setSelected(null);
               }}
@@ -295,7 +222,11 @@ export default function Resources() {
           <div className="table-toolbar">
             <div>
               <h2>{kinds[kind]}</h2>
-              <p>{query.data?.total ?? "—"} 条档案</p>
+              <p>
+                {sourceCatalogKind
+                  ? "来源目录"
+                  : `${query.data?.total ?? "—"} 条${sourceCatalogs[kind] ? "本地业务" : ""}档案`}
+              </p>
             </div>
             {kind === "DEVICE" && (
               <div className="segmented">
@@ -313,9 +244,32 @@ export default function Resources() {
                 </button>
               </div>
             )}
+            {manage && sourceCatalogs[kind] && (
+              <div className="segmented" aria-label="资源数据来源">
+                <button
+                  className={remote ? "active" : ""}
+                  onClick={() => {
+                    setRemote(true);
+                    setSelected(null);
+                  }}
+                >
+                  来源目录
+                </button>
+                <button
+                  className={!remote ? "active" : ""}
+                  onClick={() => {
+                    setRemote(false);
+                    setSelected(null);
+                  }}
+                >
+                  本地业务档案
+                </button>
+              </div>
+            )}
             {manage &&
               !["FLIGHT", "MEDIA"].includes(kind) &&
-              !(kind === "DEVICE" && remote) && (
+              !(kind === "DEVICE" && remote) &&
+              !sourceCatalogKind && (
                 <Button primary onClick={() => setForm(true)}>
                   <Plus size={14} />
                   登记资源
@@ -326,17 +280,8 @@ export default function Resources() {
             <>
               <p className="notice" aria-label="设备接入与调度说明">
                 已接入 {catalog.data?.total ?? "—"} 台 · 可调度{" "}
-                {dispatchCountsReady
-                  ? connectedArchives.filter(
-                      (resource) => resource.status === "ACTIVE",
-                    ).length
-                  : "—"}
-                台 · 待确认{" "}
-                {dispatchCountsReady
-                  ? connectedArchives.filter(
-                      (resource) => resource.status === "PENDING_CONFIRMATION",
-                    ).length
-                  : "—"}
+                {dispatchCountsReady ? schedulableDevices : "—"}台 · 待确认{" "}
+                {dispatchCountsReady ? pendingDevices : "—"}
                 台。接入后可查看设备数据；完善调度资料后，在任务调度中选择设备和飞手。
               </p>
               {dispatchCatalog.error && (
@@ -347,52 +292,55 @@ export default function Resources() {
               )}
             </>
           )}
-          <div className="filter-bar">
-            <SearchBox
-              value={search}
-              onChange={setSearch}
-              placeholder="搜索资源名称、编号或型号"
-            />
-            {kind === "DEVICE" && remote && (
-              <>
-                <Select
-                  label="设备类型"
-                  value={deviceType}
-                  onChange={setDeviceType}
-                  options={[
-                    { value: "", label: "全部设备类型" },
-                    { value: "UAV", label: "飞机" },
-                    { value: "UAV_AIRPORT", label: "机巢" },
-                    { value: "AI_POD", label: "算力舱" },
-                    { value: "CAMERA", label: "摄像机" },
-                    { value: "RADAR", label: "雷达" },
-                  ]}
-                />
-                <Select
-                  label="飞行统计筛选"
-                  value={statisticsOnly}
-                  onChange={setStatisticsOnly}
-                  options={[
-                    { value: "", label: "全部设备" },
-                    { value: "true", label: "有飞行统计" },
-                  ]}
-                />
-              </>
-            )}
-            {kind === "FLIGHT" && (
-              <Select
-                label="飞行记录设备"
-                value={flightDeviceId}
-                onChange={setFlightDeviceId}
-                options={[
-                  { value: "", label: "全部设备的飞行记录" },
-                  ...(catalog.data?.items || [])
-                    .filter((r) => r.type === "UAV")
-                    .map((r) => ({ value: r.id, label: entityName(r) })),
-                ]}
+          {sourceCatalogs[kind] && !sourceCatalogKind && (
+            <p className="notice">
+              此处展示本地登记及已导入的业务档案。
+              {manage
+                ? "可切换来源目录查看当前授权设备及关联组织范围内的来源记录。"
+                : "来源目录由平台管理员和调度人员按授权范围查看。"}
+            </p>
+          )}
+          {!sourceCatalogKind && (
+            <div className="filter-bar">
+              <SearchBox
+                value={search}
+                onChange={setSearch}
+                placeholder="搜索资源名称、编号或型号"
               />
-            )}
-          </div>
+              {kind === "DEVICE" && remote && (
+                <>
+                  <Select
+                    label="设备类型"
+                    value={deviceType}
+                    onChange={setDeviceType}
+                    options={deviceTypeOptions}
+                  />
+                  <Select
+                    label="飞行统计筛选"
+                    value={statisticsOnly}
+                    onChange={setStatisticsOnly}
+                    options={[
+                      { value: "", label: "全部设备" },
+                      { value: "true", label: "有飞行统计" },
+                    ]}
+                  />
+                </>
+              )}
+              {kind === "FLIGHT" && (
+                <Select
+                  label="飞行记录设备"
+                  value={flightDeviceId}
+                  onChange={setFlightDeviceId}
+                  options={[
+                    { value: "", label: "全部设备的飞行记录" },
+                    ...(catalog.data?.items || [])
+                      .filter((r) => r.type === "UAV")
+                      .map((r) => ({ value: r.id, label: entityName(r) })),
+                  ]}
+                />
+              )}
+            </div>
+          )}
           {kind === "DEVICE" && remote && (
             <>
               <div
@@ -448,7 +396,9 @@ export default function Resources() {
               </button>
             </div>
           )}
-          {kind === "MEDIA" && sourceMedia ? (
+          {sourceCatalogKind ? (
+            <SourceRecords key={sourceCatalogKind} kind={sourceCatalogKind} />
+          ) : kind === "MEDIA" && sourceMedia ? (
             <SourceRecords kind="media" />
           ) : (
             <>
@@ -475,156 +425,7 @@ export default function Resources() {
                         ? "人员资格和维护事项需要在本平台登记，设备接入不会自动生成人员档案。"
                         : undefined
                 }
-                columns={
-                  kind === "FLIGHT"
-                    ? [
-                        { key: "sortieNo", label: "架次编号" },
-                        { key: "deviceId", label: "来源设备" },
-                        {
-                          key: "flightTimeSeconds",
-                          label: "飞行时长",
-                          render: (r) => secondsLabel(r.flightTimeSeconds),
-                        },
-                        {
-                          key: "flightDistanceMeters",
-                          label: "飞行距离",
-                          render: (r) => metersLabel(r.flightDistanceMeters),
-                        },
-                        {
-                          key: "reportedAt",
-                          label: "上报时间",
-                          render: (r) => dateTime(r.reportedAt),
-                        },
-                        {
-                          key: "details",
-                          label: "操作",
-                          render: () => (
-                            <span className="text-link">
-                              查看记录 <ArrowRight size={12} />
-                            </span>
-                          ),
-                        },
-                      ]
-                    : kind === "DEVICE" && remote
-                      ? [
-                          {
-                            key: "name",
-                            label: "设备名称",
-                            render: (r) => (
-                              <div className="name-cell">
-                                <strong>{entityName(r)}</strong>
-                                <small>{r.id}</small>
-                              </div>
-                            ),
-                          },
-                          {
-                            key: "type",
-                            label: "设备类型",
-                            render: (r) =>
-                              ({
-                                UAV: "飞机",
-                                UAV_AIRPORT: "机巢",
-                                AI_POD: "算力舱",
-                                CAMERA: "摄像机",
-                                RADAR: "雷达",
-                              })[String(r.type)] || String(r.type || "未知"),
-                          },
-                          { key: "sn", label: "序列号" },
-                          {
-                            key: "sorties",
-                            label: "累计飞行架次",
-                            render: (r) =>
-                              getFlightTotals(r)?.sorties ?? "未知",
-                          },
-                          {
-                            key: "timeSeconds",
-                            label: "累计飞行时长",
-                            render: (r) =>
-                              secondsLabel(getFlightTotals(r)?.timeSeconds),
-                          },
-                          {
-                            key: "distanceMeters",
-                            label: "累计飞行距离",
-                            render: (r) =>
-                              metersLabel(getFlightTotals(r)?.distanceMeters),
-                          },
-                          {
-                            key: "status",
-                            label: "来源状态",
-                            render: (r) => <Status status={r.status} />,
-                          },
-                          {
-                            key: "dispatchStatus",
-                            label: "调度状态",
-                            render: (r) => dispatchStatus(r.id),
-                          },
-                          {
-                            key: "details",
-                            label: "操作",
-                            render: () => (
-                              <span className="text-link">
-                                统计 / 飞行记录 <ArrowRight size={12} />
-                              </span>
-                            ),
-                          },
-                        ]
-                      : kind === "MEDIA"
-                        ? [
-                            { key: "fileName", label: "文件名称" },
-                            { key: "contentType", label: "文件类型" },
-                            {
-                              key: "createdAt",
-                              label: "上传时间",
-                              render: (r) => dateTime(r.createdAt),
-                            },
-                            { key: "taskId", label: "关联任务" },
-                          ]
-                        : [
-                            {
-                              key: "title",
-                              label: "资源名称",
-                              render: (r) => (
-                                <div className="name-cell">
-                                  <strong>{entityName(r)}</strong>
-                                  <small>{r.id}</small>
-                                </div>
-                              ),
-                            },
-                            {
-                              key: "kind",
-                              label: "资源类型",
-                              render: (r) =>
-                                String(
-                                  r.type ||
-                                    kinds[String(r.kind)] ||
-                                    kinds[kind],
-                                ),
-                            },
-                            { key: "region", label: "所属区域" },
-                            { key: "model", label: "型号 / 资质" },
-                            {
-                              key: "status",
-                              label: kind === "DEVICE" ? "调度状态" : "状态",
-                              render: (r) => (
-                                <Status
-                                  status={r.status}
-                                  label={
-                                    kind === "DEVICE"
-                                      ? schedulingLabel(r.status)
-                                      : undefined
-                                  }
-                                />
-                              ),
-                            },
-                            {
-                              key: "details",
-                              label: "操作",
-                              render: () => (
-                                <span className="text-link">查看档案</span>
-                              ),
-                            },
-                          ]
-                }
+                columns={resourceColumns(kind, remote, dispatchStatus)}
               />
               <ListFooter page={query.data} onChange={query.setPage} />
             </>
@@ -655,6 +456,11 @@ export default function Resources() {
           <div data-resource-id={typeof form === "object" ? form.id : ""}>
             <EntityForm
               fields={fields}
+              notice={
+                kind === "DEVICE"
+                  ? "业务所属组织用于本平台任务分配，设备与任务须属于同一组织。"
+                  : undefined
+              }
               initial={
                 typeof form === "object"
                   ? {
@@ -778,104 +584,34 @@ export default function Resources() {
               />
             </section>
           )}
-          <Details
-            items={Object.entries(selected)
-              .filter(
-                ([key]) =>
-                  ![
-                    "id",
-                    "metadata",
-                    "details",
-                    "flightTotals",
-                    "provenance",
-                    ...(kind === "DEVICE" ? ["status"] : []),
-                  ].includes(key),
-              )
-              .map(([key, v]) => ({
-                label:
-                  (
-                    {
-                      title: "资源名称",
-                      name: "资源名称",
-                      kind: "资源类型",
-                      type: "设备类型",
-                      region: "区域",
-                      model: "型号",
-                      sn: "序列号",
-                      sourceDeviceId: "来源设备",
-                      longitude: "经度",
-                      latitude: "纬度",
-                      description: "备注",
-                      startAt: "开始时间",
-                      endAt: "结束时间",
-                      reportedAt: "上报时间",
-                      flightTimeSeconds: "飞行时长（秒）",
-                      flightDistanceMeters: "飞行距离（米）",
-                    } as Record<string, string>
-                  )[key] || key,
-                value:
-                  v === null
-                    ? "未知"
-                    : typeof v === "object"
-                      ? JSON.stringify(v)
-                      : String(v),
-              }))}
-          />
+          <Details items={resourceDetails(selected, kind)} />
           {!!selected.metadata && (
             <section className="section">
               <h3>档案信息</h3>
               <Details
-                items={Object.entries(
+                items={resourceMetadataDetails(
                   selected.metadata as Record<string, unknown>,
-                )
-                  .filter(([key]) =>
-                    [
-                      "description",
-                      "sourceOrganizationName",
-                      "sourceOrganizationCode",
-                      "qualificationStatus",
-                      "qualificationNote",
-                      "maintenanceAt",
-                      "deviceId",
-                      "geometryStatus",
-                      "coordinateReference",
-                      "scopeNote",
-                      "sourceCreatedAt",
-                      "sourceUpdatedAt",
-                    ].includes(key),
-                  )
-                  .map(([key, val]) => ({
-                    label:
-                      (
-                        {
-                          description: "说明",
-                          sourceOrganizationName: "来源组织",
-                          sourceOrganizationCode: "来源组织编号",
-                          qualificationStatus: "资质状态",
-                          qualificationNote: "资质说明",
-                          maintenanceAt: "维护安排日期",
-                          deviceId: "关联设备",
-                          geometryStatus: "几何数据",
-                          coordinateReference: "坐标基准",
-                          scopeNote: "来源范围",
-                          sourceCreatedAt: "来源创建时间",
-                          sourceUpdatedAt: "来源更新时间",
-                        } as Record<string, string>
-                      )[key] || key,
-                    value:
-                      val == null
-                        ? "未知"
-                        : key === "qualificationStatus" && val === "UNKNOWN"
-                          ? "待核验"
-                          : key === "coordinateReference" &&
-                              val === "SOURCE_MAP_UNSPECIFIED"
-                            ? "来源未说明"
-                            : String(val),
-                  }))}
+                )}
               />
             </section>
           )}
           <Provenance record={selected} />
+          {kind === "DEVICE" &&
+            navigate &&
+            ["ADMIN", "DISPATCH", "PILOT"].includes(user.role) &&
+            !!(remote ? selected.id : selected.sourceDeviceId) && (
+              <Button
+                onClick={() =>
+                  navigate("flight", {
+                    deviceId: String(
+                      remote ? selected.id : selected.sourceDeviceId,
+                    ),
+                  })
+                }
+              >
+                选择关联任务并检查飞控入口 <ArrowRight size={13} />
+              </Button>
+            )}
           {selectedDevice ? (
             <DeviceFlightHistory device={selectedDevice} />
           ) : kind === "DEVICE" && selected.sourceDeviceId ? (

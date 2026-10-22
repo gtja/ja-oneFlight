@@ -1,12 +1,12 @@
 # The build context supplies the combined application and an uploads snapshot.
 # All runtime settings are supplied by start.sh through container environment.
-FROM eclipse-temurin:21-jre-alpine
+ARG RUNTIME_IMAGE=oneflight-runtime-base:bundle-builder
+FROM ${RUNTIME_IMAGE}
+
+USER root
 
 ARG TARGETARCH
 RUN test "$TARGETARCH" = amd64 \
-    && apk add --no-cache curl su-exec \
-    && addgroup -S -g 10001 oneflight \
-    && adduser -S -D -H -u 10001 -G oneflight oneflight \
     && mkdir -p /app/uploads /opt/oneflight
 
 ENV TZ=Asia/Shanghai SERVER_PORT=8080 UPLOAD_DIRECTORY=/app/uploads
@@ -23,8 +23,8 @@ RUN tar -xzf /tmp/oneflight-uploads.tar.gz --no-same-owner -C /app/uploads \
     && chmod 0755 /app/uploads /opt/oneflight/entrypoint.sh \
     && chmod 0644 /app/app.jar
 
-EXPOSE 8080
+EXPOSE 8080 8089
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=6 \
-    CMD curl --fail --silent --max-time 4 http://127.0.0.1:8080/actuator/health >/dev/null || exit 1
+    CMD /opt/oneflight/healthcheck.sh
 ENTRYPOINT ["/opt/oneflight/entrypoint.sh"]

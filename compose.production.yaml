@@ -3,6 +3,7 @@ name: ${COMPOSE_PROJECT_NAME:-oneflight}
 services:
   mysql:
     image: mysql:8.4
+    profiles: [local-database]
     restart: unless-stopped
     mem_limit: 1g
     logging:
@@ -15,7 +16,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-oneflight}
       MYSQL_USER: ${DB_USERNAME:-oneflight}
       MYSQL_PASSWORD: ${DB_PASSWORD:?Configure DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Configure MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
     volumes:
       - mysql-data:/var/lib/mysql
@@ -38,15 +39,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    depends_on:
-      mysql:
-        condition: service_healthy
     ports:
       - "${WEB_PORT:-8088}:8080"
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       SERVER_PORT: 8080
-      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-oneflight}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      DB_URL: ${DB_URL:-jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-oneflight}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai}
       DB_USERNAME: ${DB_USERNAME:-oneflight}
       DB_PASSWORD: ${DB_PASSWORD:?Configure DB_PASSWORD}
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
@@ -54,12 +52,28 @@ services:
       BOOTSTRAP_ADMIN_DISPLAY_NAME: ${BOOTSTRAP_ADMIN_DISPLAY_NAME:-平台管理员}
       UPLOAD_DIRECTORY: /app/uploads
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      ONEFLIGHT_TRANSPORT_MODE: ${ONEFLIGHT_TRANSPORT_MODE:-https}
+      ONEFLIGHT_BUNDLED_GATEWAY_ENABLED: ${ONEFLIGHT_BUNDLED_GATEWAY_ENABLED:-false}
+      ONEFLIGHT_AUTH_MODE: ${ONEFLIGHT_AUTH_MODE:-local}
+      ONEFLIGHT_LOCAL_MAINTENANCE_ENABLED: ${ONEFLIGHT_LOCAL_MAINTENANCE_ENABLED:-false}
+      ONEFLIGHT_FOUR_A_ORIGIN: ${ONEFLIGHT_FOUR_A_ORIGIN:-https://4a.jing-an.com:32712}
+      ONEFLIGHT_FOUR_A_TIMEOUT_SECONDS: ${ONEFLIGHT_FOUR_A_TIMEOUT_SECONDS:-8}
+      ONEFLIGHT_BOOTSTRAP_FOUR_A_USER_ID: ${ONEFLIGHT_BOOTSTRAP_FOUR_A_USER_ID:-}
+      ONEFLIGHT_PUBLIC_ORIGIN: ${ONEFLIGHT_PUBLIC_ORIGIN:-}
+      FLIGHT_CONTROL_MODE: ${FLIGHT_CONTROL_MODE:-local}
+      ONEFLIGHT_EMBED_VIEW: ${ONEFLIGHT_EMBED_VIEW:-native}
+      FLIGHT_CONTROL_ENTRY_PATH: ${FLIGHT_CONTROL_ENTRY_PATH:-/source/UAV_AIRPORT}
+      FLIGHT_CONTROL_DIRECT_URL: ${FLIGHT_CONTROL_DIRECT_URL:-https://dushu.jing-an.com:32716/control-room}
+      FLIGHT_CONTROL_ORIGIN: ${FLIGHT_CONTROL_ORIGIN:-}
+      FLIGHT_CONTROL_GATEWAY_SECRET: ${FLIGHT_CONTROL_GATEWAY_SECRET:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8088}
       MAP_STYLE_URL: ${MAP_STYLE_URL:-https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json}
       MAP_SATELLITE_URL: ${MAP_SATELLITE_URL:-}
       MAP_TERRAIN_URL: ${MAP_TERRAIN_URL:-}
       SOURCE_GATEWAY_ORIGIN: ${SOURCE_GATEWAY_ORIGIN:-https://dushu.jing-an.com:32716}
       SOURCE_GATEWAY_SYSTEM: ${SOURCE_GATEWAY_SYSTEM:-jingqi}
+      SOURCE_GATEWAY_PINNED_HOST: ${SOURCE_GATEWAY_PINNED_HOST:-}
+      SOURCE_GATEWAY_PINNED_IP: ${SOURCE_GATEWAY_PINNED_IP:-}
       SOURCE_TARGET_HOST: ${SOURCE_TARGET_HOST:-47.96.225.165:32716}
       SOURCE_TOKEN: ${SOURCE_TOKEN:-}
       SOURCE_USERNAME: ${SOURCE_USERNAME:-}

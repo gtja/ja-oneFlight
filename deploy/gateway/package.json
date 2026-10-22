@@ -1,0 +1,12 @@
+{
+  "name": "oneflight-flight-control-gateway",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": { "localforage": "1.10.0" },
+  "devDependencies": { "esbuild": "0.25.12", "jsdom": "27.4.0", "fake-indexeddb": "6.2.4" }
+}

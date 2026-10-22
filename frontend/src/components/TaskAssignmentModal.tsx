@@ -163,6 +163,9 @@ export function TaskAssignmentForm({
         <div>
           <small>当前任务</small>
           <strong>{String(task.title || "任务")}</strong>
+          {options?.organizationName && (
+            <small>任务业务组织：{options.organizationName}</small>
+          )}
         </div>
         <div>
           <small>作业区域</small>
@@ -220,12 +223,18 @@ export function TaskAssignmentForm({
                 value: item.id,
                 label: item.title,
                 disabled: !item.eligible,
-                description: item.eligible
-                  ? item.compatiblePilotCount
-                    ? `${item.compatiblePilotCount} 名匹配飞手`
-                    : "暂无匹配飞手"
-                  : item.reasons.map((reason) => reason.message).join("；") ||
-                    statusLabel(item.status),
+                description: [
+                  item.organizationName &&
+                    `设备业务组织：${item.organizationName}`,
+                  item.eligible
+                    ? item.compatiblePilotCount
+                      ? `${item.compatiblePilotCount} 名匹配飞手`
+                      : "暂无匹配飞手"
+                    : item.reasons.map((reason) => reason.message).join("；") ||
+                      statusLabel(item.status),
+                ]
+                  .filter(Boolean)
+                  .join("；"),
                 group: item.eligible ? undefined : "暂不可分配",
               })) || []),
             ]}
@@ -237,6 +246,8 @@ export function TaskAssignmentForm({
           />
           {selectedDevice && (
             <span>
+              {selectedDevice.organizationName &&
+                `设备业务组织：${selectedDevice.organizationName}；`}
               设备驻地：{selectedDevice.region || "待确认"}
               ；按任务作业区域核验飞手权限。
             </span>
@@ -272,9 +283,15 @@ export function TaskAssignmentForm({
                 value: item.id,
                 label: item.title,
                 disabled: !item.eligible,
-                description: item.eligible
-                  ? undefined
-                  : item.reasons.map((reason) => reason.message).join("；"),
+                description:
+                  [
+                    item.organizationName &&
+                      `飞手业务组织：${item.organizationName}`,
+                    !item.eligible &&
+                      item.reasons.map((reason) => reason.message).join("；"),
+                  ]
+                    .filter(Boolean)
+                    .join("；") || undefined,
               })) || []),
             ]}
             onChange={(value) => {
@@ -364,6 +381,8 @@ export function TaskAssignmentForm({
                   {pilot.reasons.map((reason) => reason.message).join("；")}
                 </p>
                 <small>
+                  {pilot.organizationName &&
+                    `飞手业务组织：${pilot.organizationName}；`}
                   账号可见区域：
                   {pilot.regions.length
                     ? pilot.regions.join("、")

@@ -151,6 +151,28 @@ describe("任务分配以服务端规则和设备飞手组合为准", () => {
       reason: "任务结束时间须晚于开始时间",
     });
   });
+  it("组织不匹配时同时显示任务与设备的业务组织，并保持设备禁选", () => {
+    const input = props();
+    input.deviceId = "";
+    input.options.organizationName = "一网统飞平台管理";
+    Object.assign(input.options.devices[0], {
+      organizationId: "old-org",
+      organizationName: "平台运营中心",
+      eligible: false,
+      reasons: [
+        { code: "DEVICE_ORGANIZATION", message: "设备与任务不属于同一组织" },
+      ],
+    });
+    render(<TaskAssignmentForm {...input} />);
+    expect(screen.getByText("任务业务组织：一网统飞平台管理")).toBeTruthy();
+    fireEvent.click(screen.getByRole("combobox", { name: "执行设备*" }));
+    const device = screen.getByRole("option", { name: /常州-006/ });
+    expect(device.textContent).toContain("设备业务组织：平台运营中心");
+    expect(device.textContent).toContain("设备与任务不属于同一组织");
+    expect(device.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(device);
+    expect(input.onDeviceChange).not.toHaveBeenCalled();
+  });
   it("无合格飞手时不给默认值、不允许提交，直接显示区域原因", () => {
     const input = props();
     input.options.pilots = [input.options.pilots[1]];

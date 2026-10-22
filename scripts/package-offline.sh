@@ -3,6 +3,8 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$ROOT/scripts/lib/env.sh"
 VERSION=${1:-1.0.0}
+WITH_FLIGHT_CONTROL_GATEWAY=${WITH_FLIGHT_CONTROL_GATEWAY:-0}
+[[ "$WITH_FLIGHT_CONTROL_GATEWAY" == 0 || "$WITH_FLIGHT_CONTROL_GATEWAY" == 1 ]] || { printf 'WITH_FLIGHT_CONTROL_GATEWAY must be 0 or 1.\n' >&2; exit 2; }
 [[ "$VERSION" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || { printf 'Invalid image version.\n' >&2; exit 1; }
 FINAL_DIR="$ROOT/artifacts/oneflight-${VERSION}-linux-amd64"
 mkdir -p "$ROOT/artifacts"
@@ -64,18 +66,27 @@ docker info >/dev/null
 preserve_runtime_tag "oneflight-api:$VERSION" api
 preserve_runtime_tag "oneflight-web:$VERSION" web
 preserve_runtime_tag mysql:8.4 mysql
+if [[ "$WITH_FLIGHT_CONTROL_GATEWAY" == 1 ]]; then
+  preserve_runtime_tag "oneflight-gateway:$VERSION" gateway
+  docker buildx build --platform linux/amd64 --load --tag "oneflight-gateway:$VERSION" --file "$ROOT/deploy/gateway/Dockerfile" "$ROOT"
+fi
 docker buildx build --platform linux/amd64 --load --tag "oneflight-api:$VERSION" "$ROOT/backend"
 docker buildx build --platform linux/amd64 --load --tag "oneflight-web:$VERSION" "$ROOT/frontend"
 docker pull --platform linux/amd64 mysql:8.4
 : > "$DEST/images.txt"
-for image in "oneflight-api:$VERSION" "oneflight-web:$VERSION" mysql:8.4; do
+PACKAGE_IMAGES=("oneflight-api:$VERSION" "oneflight-web:$VERSION" mysql:8.4)
+if [[ "$WITH_FLIGHT_CONTROL_GATEWAY" == 1 ]]; then PACKAGE_IMAGES+=("oneflight-gateway:$VERSION"); fi
+for image in "${PACKAGE_IMAGES[@]}"; do
   printf '%s ' "$image" >> "$DEST/images.txt"
   docker image inspect --platform linux/amd64 "$image" --format '{{.Os}}/{{.Architecture}} {{.Id}}' >> "$DEST/images.txt"
 done
-docker save --platform linux/amd64 "oneflight-api:$VERSION" "oneflight-web:$VERSION" mysql:8.4 | gzip > "$DEST/images.tar.gz"
+docker save --platform linux/amd64 "${PACKAGE_IMAGES[@]}" | gzip > "$DEST/images.tar.gz"
 # Repoint existing tags to their original platform immediately after export. No container is recreated.
 restore_runtime_tags
 cp "$ROOT/compose.offline.yaml" "$DEST/compose.yaml"
+cp "$ROOT/compose.gateway.split.yaml" "$DEST/compose.gateway.split.yaml"
+mkdir -p "$DEST/deploy/gateway"
+cp "$ROOT/deploy/gateway/README.md" "$ROOT/deploy/gateway/compose.standalone.yaml" "$DEST/deploy/gateway/"
 cp "$ROOT/.env.example" "$DEST/.env.example"
 cp "$ROOT/scripts/init-env.sh" "$ROOT/scripts/load-offline.sh" "$ROOT/scripts/backup.sh" "$ROOT/scripts/restore.sh" \
   "$ROOT/scripts/seed-business.mjs" "$ROOT/scripts/qa-data-coverage.mjs" "$ROOT/scripts/qa-workflow.mjs" \
@@ -88,7 +99,7 @@ if [[ -f "$ROOT/docs/ACCEPTANCE.md" ]]; then cp "$ROOT/docs/ACCEPTANCE.md" "$DES
 cat > "$DEST/README.md" <<'DOC'
 # 一网统飞 Linux AMD64 离线部署包
 
-需要 x86_64 Linux、Docker Engine 和 Compose v2。运行 `./scripts/load-offline.sh`，脚本校验并导入三张镜像，生成私有 `.env`，然后启动服务。
+需要 x86_64 Linux、Docker Engine 和 Compose v2。运行 `./scripts/load-offline.sh`，脚本校验并导入包内镜像，生成私有 `.env`，然后启动服务。默认包含三张镜像；启用网关打包选项时另含 HTTPS 网关镜像，配置见 `deploy/gateway/README.md`。
 
 默认入口 `http://localhost:8088`。管理员账号和初始密码在 `.env` 中，来源凭据需要由授权数据提供方配置。包内不含实际凭据、业务数据库、人员档案、附件或已导入数据。
 
@@ -114,4 +125,7 @@ COPYFILE_DISABLE=1 tar -czf "$BUNDLE" -C "$STAGING_ROOT" "$(basename "$DEST")"
 (cd "$ROOT/artifacts" && oneflight_checksums "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256")
 mkdir -p "$FINAL_DIR"
 cp -R "$DEST/." "$FINAL_DIR/"
+if [[ "$WITH_FLIGHT_CONTROL_GATEWAY" == 1 ]]; then
+  printf 'Gateway image included; configure HTTPS domains/certificates, then scripts/load-offline.sh --gateway.\n'
+fi
 printf 'Offline package created: %s\nIncludes linux/amd64 images and no private .env or credentials.\n' "$BUNDLE"

@@ -4,29 +4,31 @@ React + TypeScript 前端、Java 21 + Spring Boot 后端，按杭州一网统飞
 
 ## 快速启动
 
-正式服务器使用前后端合一的 `oneflight-app` 镜像，Java 同时提供 React 静态页面和 API，MySQL 与附件保留独立持久化。构建、发布、备份和回退见 [一体镜像生产部署](docs/PRODUCTION.md)；原有本地开发启动方式如下。
+本地开发与当前服务器部署统一连接私有配置指定的远端 MySQL 业务库，保留同一套业务记录、4A 关联与平台授权。前后端单镜像部署见 [HTTP IP 单镜像部署](docs/SINGLE_IMAGE_IP.md)；已有独立项目的运维方式见 [一体镜像生产部署](docs/PRODUCTION.md)。H2 仅用于自动化测试，不作为日常开发数据库。
 
 已安装 Docker Desktop 或 Docker Engine + Compose 时，在项目根目录执行：
 
 ```bash
+./scripts/init-env.sh
+# 编辑 .env：配置远端业务库 DB_URL、DB_USERNAME、DB_PASSWORD
 ./scripts/up.sh
 ```
 
-打开 <http://localhost:8088>。首次启动生成私有 `.env`，登录账号为其中的 `BOOTSTRAP_ADMIN_USERNAME`，初始密码在 `BOOTSTRAP_ADMIN_PASSWORD`。不要把 `.env` 上传到 Git。已有管理员不会因重启被重新初始化。
+打开 <http://localhost:8088>。首次初始化生成私有 `.env`，业务数据库账号和密码须填写现有远端账号。已启用 4A 时使用统一登录，岗位和业务授权读取既有业务库；只有本地认证模式的全新业务库才使用 `BOOTSTRAP_ADMIN_USERNAME` 和 `BOOTSTRAP_ADMIN_PASSWORD` 初始化管理员。不要把 `.env` 上传到 Git。已有账号和授权不会因重启被重新初始化。
 
 本地开发需 Node.js 24、pnpm 10.33.0、Java 21、Maven 3.9+：
 
 ```bash
 ./scripts/dev.sh
-# 使用独立 MySQL 容器进行开发
+# 与默认模式相同，直接使用 .env 指定的远端 MySQL
 ./scripts/dev.sh --mysql
 # 仅开发前端，API 使用已运行的 Docker 后端（与 8088 共用附件卷）
 ./scripts/dev.sh --container-api
 ```
 
-前端地址 <http://localhost:5173>，后端 <http://localhost:8080>。默认开发数据库为 `backend/data/oneflight` 中的持久化 H2，正式部署使用 MySQL 8.4。Ctrl-C 结束开发服务；MySQL 数据卷保留。
+前端地址 <http://localhost:5173>，后端 <http://localhost:8080>。默认开发模式与 `--mysql` 均直接使用 `.env` 的 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`，不会创建 MySQL 容器或改成 localhost。缺少数据库配置会拒绝启动；`--h2` 已禁用，H2 仅保留在自动化测试配置中。Ctrl-C 结束开发服务，不影响远端业务数据。
 
-原生 `--mysql` 模式不能与使用同一业务库的 Docker 后端并行写入，脚本会检查并阻止。需让本机 Java 与容器共享附件目录时，使用 `./scripts/up.sh --shared-uploads`；该模式只用于开发，默认部署仍使用命名文件卷。
+已有 Docker 后端运行时，使用 `--container-api` 只调试前端；原生 Java 模式会检查同项目 Docker 后端，避免重复启动。`.local/source.env` 仅允许覆盖 `SOURCE_` 来源配置，业务数据库始终以 `.env` 为准。原生附件默认使用 `backend/uploads`，也可在 `.env` 指定 `UPLOAD_DIRECTORY`；连接同一业务库前须确认对应附件已恢复。需与本机 Compose 共享附件目录时，仍可使用 `./scripts/up.sh --shared-uploads`，保持既有附件合并规则。
 
 ## 功能与真实数据
 
@@ -47,6 +49,8 @@ React + TypeScript 前端、Java 21 + Spring Boot 后端，按杭州一网统飞
 | `compose*.yaml` | 正式部署、离线部署与本机开发配置 |
 | `scripts/` | 开发、容器启动、AMD64 离线打包、备份恢复 |
 | `docs/` | 架构、接口、部署和接入说明 |
+
+后续开发先阅读 [Agent 开发约定](AGENTS.md) 和 [项目开发规范](docs/DEVELOPMENT.md)，本次调整见 [结构整理记录](docs/REFACTORING.md)。安装各子项目依赖后，可在根目录执行 `./scripts/check.sh`，统一检查前端、后端、嵌入网关与维护脚本；也可传入 `frontend`、`backend`、`gateway` 或 `scripts` 单独检查。检查不加载私有 `.env`，不启动业务服务或部署，真实来源测试默认关闭。
 
 ```bash
 cd frontend

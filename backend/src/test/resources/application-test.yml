@@ -4,6 +4,12 @@ spring:
     username: sa
     password: ''
 oneflight:
+  transport-mode: https
+  auth:
+    mode: local
+    local-maintenance-enabled: false
+    four-a-origin: https://identity.example.test
+    parent-origin: https://platform.example.test
   upload-directory: ./target/test-uploads
   bootstrap:
     password: ''

@@ -12,6 +12,7 @@
 # Build output and dependency caches
 node_modules/
 frontend/dist/
+deploy/gateway/dist/
 frontend/.vite/
 *.tsbuildinfo
 __pycache__/

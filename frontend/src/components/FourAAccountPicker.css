@@ -1,0 +1,82 @@
+.four-a-directory-search,
+.four-a-directory-pagination,
+.four-a-directory-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.four-a-directory-search {
+  margin: 18px 0 14px;
+}
+
+.four-a-directory-search .search-box {
+  flex: 1;
+  width: auto;
+}
+
+.four-a-directory-table {
+  max-height: 380px;
+  overflow: auto;
+}
+
+.four-a-directory-table table {
+  min-width: 660px;
+}
+
+.four-a-directory-table caption {
+  padding: 10px 0;
+  color: var(--muted);
+  text-align: left;
+}
+
+.four-a-directory-table th:first-child {
+  width: 54px;
+}
+
+.four-a-directory-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.four-a-directory-table small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.four-a-directory-table input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #79b5f4;
+}
+
+.four-a-directory-table tr.is-selected {
+  background: #2c4660;
+}
+
+.four-a-unavailable {
+  color: #e1b46f;
+}
+
+.four-a-directory-pagination {
+  justify-content: space-between;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.four-a-directory-error {
+  text-align: center;
+  padding: 24px 0 16px;
+}
+
+.four-a-directory-error .form-error {
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .four-a-directory-pagination {
+    flex-wrap: wrap;
+  }
+}

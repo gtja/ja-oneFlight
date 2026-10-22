@@ -10,6 +10,8 @@ import com.oneflight.domain.*;
 import com.oneflight.repository.*;
 
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -418,6 +420,140 @@ class WorkflowIntegrationTest {
         mvc.perform(get("/api/v1/missing").with(user("admin")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    void taskSearchUsesOnlyVisibleLinkedPlansAndQueryTakesPrecedenceOverKeyword() throws Exception {
+        String id = createTask("山林巡查");
+        FlightPlan plan = new FlightPlan();
+        plan.title = "AERIAL response";
+        plan.status = "DRAFT";
+        plan.kind = "DAILY";
+        plan.organizationId = organizationId;
+        plan.region = "杭州市";
+        plans.save(plan);
+        Task task = tasks.findById(id).orElseThrow();
+        task.planId = plan.id;
+        tasks.save(task);
+
+        mvc.perform(get("/api/v1/tasks").with(user("department"))
+                        .param("query", "  aerial  ").param("keyword", "不存在"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].id").value(id));
+        mvc.perform(get("/api/v1/tasks").with(user("department")).param("query", plan.id))
+                .andExpect(jsonPath("$.data.total").value(1));
+        mvc.perform(get("/api/v1/tasks").with(user("department"))
+                        .param("query", "").param("keyword", "不存在"))
+                .andExpect(jsonPath("$.data.total").value(1));
+        mvc.perform(get("/api/v1/tasks").with(user("department"))
+                        .param("query", "\u2003").param("status", "\u2003")
+                        .param("kind", "\u2003").param("scene", "\u2003"))
+                .andExpect(jsonPath("$.data.total").value(1));
+        mvc.perform(get("/api/v1/tasks").with(user("department"))
+                        .param("query", "\u2003aerial\u2003"))
+                .andExpect(jsonPath("$.data.total").value(0));
+
+        plan.organizationId = otherOrganizationId;
+        plans.save(plan);
+        mvc.perform(get("/api/v1/tasks").with(user("department")).param("query", "aerial"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
+        mvc.perform(get("/api/v1/tasks").with(user("department")).param("query", plan.id))
+                .andExpect(jsonPath("$.data.total").value(0));
+    }
+
+    @Test
+    void taskPagingCountsOnlyVisibleMatchesAndKeepsNewestFirst() throws Exception {
+        List<Task> records = new ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            Task task = new Task();
+            task.title = "巡查 " + index;
+            task.status = index == 2 ? "RETURNED" : "DRAFT";
+            task.scene = index == 3 ? "城市治理" : "森林防火";
+            task.organizationId = index == 4 ? otherOrganizationId : organizationId;
+            task.region = "杭州市";
+            task.createdAt = java.time.Instant.parse("2026-10-15T01:00:00Z").plusSeconds(index);
+            records.add(tasks.save(task));
+        }
+
+        mvc.perform(get("/api/v1/tasks").with(user("department"))
+                        .param("query", "巡查").param("status", "DRAFT").param("scene", "森林防火")
+                        .param("page", "1").param("pageSize", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.items[0].id").value(records.get(1).id));
+        mvc.perform(get("/api/v1/tasks").with(user("department"))
+                        .param("query", "巡查").param("status", "DRAFT").param("scene", "森林防火")
+                        .param("page", "2").param("pageSize", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.items[0].id").value(records.get(0).id));
+    }
+
+    @Test
+    void resourceListsSearchDeviceFieldsAndApplyKindAndSceneFilters() throws Exception {
+        Resource device = resources.findById(deviceId).orElseThrow();
+        device.model = "Model-Alpha";
+        device.sn = "SERIAL-X";
+        resources.save(device);
+        for (String keyword : List.of(" alpha ", "serial-x", device.sourceDeviceId)) {
+            mvc.perform(get("/api/v1/resources").with(user("department"))
+                            .param("query", keyword).param("kind", "DEVICE").param("status", "ACTIVE"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.total").value(1))
+                    .andExpect(jsonPath("$.data.items[0].id").value(deviceId));
+        }
+        mvc.perform(get("/api/v1/resources").with(user("department")).param("kind", "PERSON"))
+                .andExpect(jsonPath("$.data.total").value(0));
+        mvc.perform(get("/api/v1/resources").with(user("department")).param("scene", "森林防火"))
+                .andExpect(jsonPath("$.data.total").value(0));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"tasks,TASK", "plans,PLAN", "resources,RESOURCE", "cases,CASE", "consultations,CONSULTATION"})
+    void savesKeepInitializationCreateAndUpdateAuditActions(String endpoint, String entityType) throws Exception {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("title", "审计分类");
+        input.put("region", "杭州市");
+        switch (endpoint) {
+            case "tasks" -> input.putAll(Map.of("scene", "森林防火",
+                    "startAt", "2026-10-15T01:00:00Z", "endAt", "2026-10-15T02:00:00Z"));
+            case "plans" -> input.putAll(Map.of("kind", "DAILY",
+                    "startAt", "2026-10-15T01:00:00Z", "endAt", "2026-10-15T02:00:00Z"));
+            case "resources" -> input.put("kind", "DEVICE");
+            case "cases" -> input.put("scene", "森林防火");
+            case "consultations" -> input.put("kind", "CONSULTATION");
+            default -> throw new AssertionError("Unsupported endpoint: " + endpoint);
+        }
+        Map<String, Object> provenance = Map.of("origin", "BUSINESS_INITIALIZATION");
+        if ("resources".equals(endpoint)) input.put("metadata", Map.of("provenance", provenance));
+        else input.put("provenance", provenance);
+        String body = json.writeValueAsString(input);
+        String response = mvc.perform(post("/api/v1/" + endpoint).with(user("admin")).with(csrf())
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String initializedId = json.readTree(response).path("data").path("id").asText();
+        assertThat(events.findAll().stream().filter(event -> initializedId.equals(event.entityId)))
+                .extracting(event -> event.entityType + ":" + event.action)
+                .containsExactly(entityType + ":INITIALIZE");
+
+        mvc.perform(put("/api/v1/" + endpoint + "/" + initializedId)
+                        .with(user("admin")).with(csrf()).contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        assertThat(events.findAll().stream().filter(event -> initializedId.equals(event.entityId)))
+                .extracting(event -> event.action).containsExactlyInAnyOrder("INITIALIZE", "UPDATE");
+
+        provenance = Map.of("origin", "MANUAL");
+        if ("resources".equals(endpoint)) input.put("metadata", Map.of("provenance", provenance));
+        else input.put("provenance", provenance);
+        response = mvc.perform(post("/api/v1/" + endpoint).with(user("admin")).with(csrf())
+                        .contentType("application/json").content(json.writeValueAsString(input)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String manualId = json.readTree(response).path("data").path("id").asText();
+        assertThat(events.findAll().stream().filter(event -> manualId.equals(event.entityId)))
+                .extracting(event -> event.entityType + ":" + event.action)
+                .containsExactly(entityType + ":CREATE");
     }
 
     @Test

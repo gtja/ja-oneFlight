@@ -10,7 +10,12 @@ public record CurrentUser(
         String organizationId,
         Set<String> regions,
         Set<String> deviceIds,
-        Set<String> organizationIds) {
+        Set<String> organizationIds,
+        boolean businessAccessAssigned) {
+    public CurrentUser(String id, String username, String displayName, Role role, String organizationId,
+            Set<String> regions, Set<String> deviceIds, Set<String> organizationIds) {
+        this(id, username, displayName, role, organizationId, regions, deviceIds, organizationIds, true);
+    }
     public CurrentUser(
             String id,
             String username,
@@ -19,6 +24,6 @@ public record CurrentUser(
             String organizationId,
             Set<String> regions,
             Set<String> deviceIds) {
-        this(id, username, displayName, role, organizationId, regions, deviceIds, Set.of());
+        this(id, username, displayName, role, organizationId, regions, deviceIds, Set.of(), true);
     }
 }

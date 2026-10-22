@@ -3,7 +3,7 @@ import { taskNextStep } from "../taskWorkflow";
 import { flightPlanCompatibility } from "../flightPlanLink";
 import SourceRecords from "../components/SourceRecords";
 import TaskAssignmentModal from "../components/TaskAssignmentModal";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   CalendarDays,
@@ -43,6 +43,9 @@ import {
   Tabs,
   type Field,
 } from "../components/UI";
+const calendarDayFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+});
 const taskFields: Field[] = [
   { key: "title", label: "任务名称", required: true, wide: true },
   {
@@ -89,10 +92,12 @@ export default function Tasks({
   navigate,
   taskId,
   planId,
+  initialAction,
 }: {
   navigate: Navigate;
   taskId?: string;
   planId?: string;
+  initialAction?: string;
 }) {
   const user = useUser();
   const manage = ["ADMIN", "DISPATCH"].includes(user.role);
@@ -125,9 +130,20 @@ export default function Tasks({
     !!selected,
   );
   const current = selected && !detail.error ? detail.data || selected : null;
-  const currentDevice = resources.data?.items.find(
-    (resource) => resource.id === current?.deviceId,
-  );
+  const openedAssignment = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (
+      initialAction === "assign" &&
+      taskId &&
+      current?.id === taskId &&
+      current.status === "PENDING_ASSIGNMENT" &&
+      manage &&
+      openedAssignment.current !== taskId
+    ) {
+      openedAssignment.current = taskId;
+      setAction("ASSIGN");
+    }
+  }, [current?.id, current?.status, initialAction, manage, taskId]);
   const currentPlanQuery = useData<Entity>(
     `/plans/${current?.planId || "none"}`,
     !!current?.planId,
@@ -232,6 +248,16 @@ export default function Tasks({
         ]
       : []),
   ];
+  const calendarTasks = new Map<string, Entity[]>();
+  if (calendar && !nativeHistory) {
+    for (const task of rows) {
+      if (!task.startAt) continue;
+      const day = calendarDayFormatter.format(new Date(String(task.startAt)));
+      const dayTasks = calendarTasks.get(day);
+      if (dayTasks) dayTasks.push(task);
+      else calendarTasks.set(day, [task]);
+    }
+  }
   return (
     <div className="page">
       <PageHeader
@@ -396,16 +422,8 @@ export default function Tasks({
                 {Array.from({ length: 7 }, (_, index) => {
                   const d = new Date();
                   d.setDate(d.getDate() + index);
-                  const day = new Intl.DateTimeFormat("en-CA", {
-                    timeZone: "Asia/Shanghai",
-                  }).format(d);
-                  const tasks = rows.filter(
-                    (r) =>
-                      r.startAt &&
-                      new Intl.DateTimeFormat("en-CA", {
-                        timeZone: "Asia/Shanghai",
-                      }).format(new Date(String(r.startAt))) === day,
-                  );
+                  const day = calendarDayFormatter.format(d);
+                  const tasks = calendarTasks.get(day) || [];
                   return (
                     <div className="calendar-day" key={index}>
                       <header>
@@ -757,22 +775,12 @@ export default function Tasks({
               (manage || user.role === "DEPARTMENT") && (
                 <Button onClick={() => setAction("CANCEL")}>取消任务</Button>
               )}
-            {!!current.deviceId && (
+            {["ADMIN", "DISPATCH", "PILOT"].includes(user.role) && (
               <Button
-                disabled={!currentDevice?.sourceDeviceId}
-                title={
-                  !currentDevice?.sourceDeviceId
-                    ? "执行设备尚未关联来源，或关联信息正在加载"
-                    : "查看本任务所分配设备的观测与飞行记录"
-                }
-                onClick={() =>
-                  navigate("flight", {
-                    deviceId: String(currentDevice!.sourceDeviceId),
-                    taskId: current.id,
-                  })
-                }
+                title="先检查本任务审批、人员设备和执行时段，再确认进入飞控"
+                onClick={() => navigate("flight", { taskId: current.id })}
               >
-                查看设备运行 <ArrowRight size={13} />
+                飞控入口检查 <ArrowRight size={13} />
               </Button>
             )}
           </div>

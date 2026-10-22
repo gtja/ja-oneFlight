@@ -114,6 +114,10 @@ function renderResources(
         );
       case "/api/v1/organizations":
         return response(page([]));
+      case "/api/v1/source-data/people":
+      case "/api/v1/source-data/routes":
+      case "/api/v1/source-data/airspaces":
+        return response(page([]));
       case `/api/v1/devices/${device.id}`:
         await options.detailReady;
         return response(device);
@@ -134,14 +138,15 @@ function renderResources(
   if (options.cachedSourceTable)
     client.setQueryData(["/devices", "page=1&pageSize=100"], page([device]));
   clients.push(client);
+  const navigate = vi.fn();
   render(
     <QueryClientProvider client={client}>
       <UserContext.Provider value={user}>
-        <Resources />
+        <Resources navigate={navigate} />
       </UserContext.Provider>
     </QueryClientProvider>,
   );
-  return { client, requests };
+  return { client, requests, navigate };
 }
 
 function deviceRequests(requests: URL[]) {
@@ -155,12 +160,14 @@ function deviceRequests(requests: URL[]) {
 async function openArchive(item = binding) {
   if (item.kind === "DEVICE")
     fireEvent.click(screen.getByRole("button", { name: "调度档案" }));
-  else
+  else {
     fireEvent.click(
       screen.getByRole("button", {
         name: item.kind === "ROUTE" ? "航线资源" : "空域资源",
       }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "本地业务档案" }));
+  }
   fireEvent.click(
     await screen.findByText(String(item.title), { selector: "strong" }),
   );
@@ -168,6 +175,34 @@ async function openArchive(item = binding) {
 }
 
 describe("资源详情的来源设备身份", () => {
+  it.each([
+    { sources: [device], schedulable: 1 },
+    { sources: [], schedulable: 0 },
+  ])(
+    "调度状态统计只计算当前已接入来源目录的档案 $schedulable",
+    async ({ sources, schedulable }) => {
+      const { client } = renderResources({ sources });
+      await waitFor(() => expect(client.isFetching()).toBe(0));
+      expect(
+        screen
+          .getByLabelText("设备接入与调度说明")
+          .textContent?.replace(/\s/g, ""),
+      ).toContain(`已接入${sources.length}台·可调度${schedulable}台·待确认0台`);
+    },
+  );
+  it("从设备档案进入任务筛选，不直接启动来源飞控", async () => {
+    const { navigate, requests } = renderResources();
+    const dialog = await openArchive();
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "选择关联任务并检查飞控入口",
+      }),
+    );
+    expect(navigate).toHaveBeenCalledWith("flight", { deviceId: device.id });
+    expect(
+      requests.some((url) => url.pathname.includes("/flight-control/launch")),
+    ).toBe(false);
+  });
   it("关联设备已不在来源目录时保留本地档案并说明当前不可见", async () => {
     const { client, requests } = renderResources({ sources: [] });
     const dialog = await openArchive();

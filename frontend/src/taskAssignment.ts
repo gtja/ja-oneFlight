@@ -5,6 +5,7 @@ export type AssignmentDevice = {
   status: string;
   region?: string;
   organizationId: string;
+  organizationName?: string;
   eligible: boolean;
   reasons: AssignmentReason[];
   compatiblePilotCount: number;
@@ -13,6 +14,7 @@ export type AssignmentPilot = {
   id: string;
   title: string;
   organizationId: string;
+  organizationName?: string;
   regions: string[];
   eligible: boolean;
   reasons: AssignmentReason[];
@@ -22,6 +24,7 @@ export type TaskAssignmentOptions = {
   taskStatus: string;
   region: string;
   organizationId: string;
+  organizationName?: string;
   startAt?: string;
   endAt?: string;
   selectedDeviceId: string | null;

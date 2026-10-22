@@ -4,6 +4,8 @@ server:
     session:
       timeout: 120m
       cookie:
+        name: ${SESSION_COOKIE_NAME:ONEFLIGHTSESSION}
+        path: ${SESSION_COOKIE_PATH:/api}
         http-only: true
         same-site: lax
         secure: ${SESSION_COOKIE_SECURE:false}
@@ -11,9 +13,9 @@ spring:
   application:
     name: oneflight-api
   datasource:
-    url: ${DB_URL:jdbc:h2:file:./data/oneflight;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE}
-    username: ${DB_USERNAME:sa}
-    password: ${DB_PASSWORD:}
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
   jpa:
     open-in-view: false
     hibernate:
@@ -37,6 +39,14 @@ management:
     health:
       show-details: never
 oneflight:
+  transport-mode: ${ONEFLIGHT_TRANSPORT_MODE:https}
+  auth:
+    mode: ${ONEFLIGHT_AUTH_MODE:local}
+    local-maintenance-enabled: ${ONEFLIGHT_LOCAL_MAINTENANCE_ENABLED:false}
+    four-a-origin: ${ONEFLIGHT_FOUR_A_ORIGIN:https://4a.jing-an.com:32712}
+    parent-origin: ${ONEFLIGHT_PUBLIC_ORIGIN:}
+    timeout-seconds: ${ONEFLIGHT_FOUR_A_TIMEOUT_SECONDS:8}
+    bootstrap-four-a-user-id: ${ONEFLIGHT_BOOTSTRAP_FOUR_A_USER_ID:}
   allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173}
   upload-directory: ${UPLOAD_DIRECTORY:./data/uploads}
   bootstrap:

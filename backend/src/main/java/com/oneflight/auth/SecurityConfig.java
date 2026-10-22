@@ -3,6 +3,7 @@ package com.oneflight.auth;
 import com.oneflight.repository.UserAccountRepository;
 
 import org.springframework.context.annotation.*;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.*;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.http.HttpMethod;
@@ -15,6 +16,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.*;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.web.cors.*;
 
 import java.util.*;
@@ -54,7 +57,21 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, SecurityContextRepository repository)
+    @Order(1)
+    SecurityFilterChain childBootstrapChain(HttpSecurity http) throws Exception {
+        // Child pages and internal gateway checks authenticate with tickets/grants + gateway secret.
+        // inside their controller. Child-origin browsers cannot supply the parent JSESSIONID.
+        return http.securityMatcher("/api/v1/flight-control/bootstrap", "/api/v1/flight-control/logout-page", "/api/v1/flight-control/gateway-check")
+                .csrf(c -> c.disable()).sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .headers(h -> h.frameOptions(f -> f.disable()).referrerPolicy(r -> r.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER)))
+                .authorizeHttpRequests(a -> a.requestMatchers(HttpMethod.GET, "/api/v1/flight-control/bootstrap", "/api/v1/flight-control/logout-page", "/api/v1/flight-control/gateway-check").permitAll().anyRequest().denyAll())
+                .build();
+    }
+
+    @Bean
+    @Order(2)
+    SecurityFilterChain filterChain(HttpSecurity http, SecurityContextRepository repository,
+            FourASessionService sessions, FourAProperties fourA, FourAIdentityService identities, UserAccountRepository users)
             throws Exception {
         var csrf = new HttpSessionCsrfTokenRepository();
         csrf.setHeaderName("X-CSRF-TOKEN");
@@ -63,6 +80,7 @@ public class SecurityConfig {
                 .headers(h -> h.referrerPolicy(r -> r.policy(
                         ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
                 .securityContext(c -> c.securityContextRepository(repository))
+                .addFilterBefore(new FourASessionFilter(sessions, fourA, identities, users), AuthorizationFilter.class)
                 .authorizeHttpRequests(
                         a ->
                                 a.requestMatchers(HttpMethod.GET,
@@ -75,6 +93,9 @@ public class SecurityConfig {
                                                 "/actuator/health",
                                                 "/api/v1/auth/csrf",
                                                 "/api/v1/auth/login",
+                                                "/api/v1/auth/options",
+                                                "/api/v1/auth/4a/start",
+                                                "/api/v1/auth/4a/callback",
                                                 "/v3/api-docs/**",
                                                 "/swagger-ui/**",
                                                 "/swagger-ui.html")

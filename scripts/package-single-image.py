@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shlex
 import shutil
 import signal
@@ -76,8 +77,14 @@ def stream_file(args, destination, compress=False, env=None):
                 process.wait()
 
 
-def runtime_settings(values, server_ip):
+def runtime_settings(values, server_ip, *, http_ip=False, public_ip=None):
     """Render private Bash settings; credentials never enter image layers."""
+    values = dict(values)
+    if public_ip is not None:
+        public_ip = str(ipaddress.IPv4Address(public_ip))
+    if http_ip:
+        values.update({"ONEFLIGHT_TRANSPORT_MODE": "http-ip", "ONEFLIGHT_BUNDLED_GATEWAY_ENABLED": "true",
+                       "ONEFLIGHT_GATEWAY_ENABLED": "false"})
     mysql = urlsplit(values["DB_URL"].removeprefix("jdbc:"))
     gateway = urlsplit(values["SOURCE_GATEWAY_ORIGIN"])
     mqtt = urlsplit(values["SOURCE_MQTT_URL"])
@@ -90,8 +97,11 @@ def runtime_settings(values, server_ip):
     if not re.fullmatch(r"[A-Za-z0-9.-]+", domain):
         raise ValueError("Invalid HTTPS gateway domain")
     lines = [
-        "# ===== 可修改配置：以后换服务器，修改 SERVER_IP 后重新执行 bash start.sh =====",
+        "# ===== 可修改配置：公网入口和内网服务分别配置，修改后执行 bash start.sh =====",
+        "# SERVER_IP 是数据库、设备接口、MQTT 和算法使用的内网地址。",
         "SERVER_IP=" + shlex.quote(server_ip),
+        "# PUBLIC_IP 是浏览器访问平台和飞控入口使用的公网地址。",
+        "PUBLIC_IP=" + (shlex.quote(public_ip) if public_ip is not None else '"${SERVER_IP}"'),
         "",
         "# 数据库；业务库保持 oneflight，来源库使用各自的只读连接。",
         'MYSQL_HOST="${SERVER_IP}"',
@@ -125,10 +135,51 @@ def runtime_settings(values, server_ip):
         derived.add("SOURCE_IDENTITY_JDBC_URL")
         lines.append("SOURCE_IDENTITY_DATABASE=" + shlex.quote(identity_database))
     literals = {key: value for key, value in values.items()
-                if key.startswith(("SOURCE_", "MAP_", "BOOTSTRAP_")) and key not in derived}
-    literals.update({"TZ": "Asia/Shanghai", "SERVER_PORT": "8080", "SESSION_COOKIE_SECURE": "false",
-                     "UPLOAD_DIRECTORY": "/app/uploads", "ALLOWED_ORIGINS": "http://localhost:8088,http://127.0.0.1:8088"})
+                if key.startswith(("SOURCE_", "MAP_", "BOOTSTRAP_", "ONEFLIGHT_", "FLIGHT_CONTROL_", "SESSION_"))
+                and key not in derived}
+    integration_defaults = {
+        "ONEFLIGHT_AUTH_MODE": "local", "ONEFLIGHT_LOCAL_MAINTENANCE_ENABLED": "false",
+        "ONEFLIGHT_BOOTSTRAP_FOUR_A_USER_ID": "", "ONEFLIGHT_EMBED_VIEW": "adapted",
+        "ONEFLIGHT_FOUR_A_ORIGIN": "https://4a.jing-an.com:32712", "ONEFLIGHT_FOUR_A_TIMEOUT_SECONDS": "8",
+        "ONEFLIGHT_PUBLIC_ORIGIN": "", "FLIGHT_CONTROL_MODE": "local", "FLIGHT_CONTROL_ORIGIN": "",
+        "FLIGHT_CONTROL_ENTRY_PATH": "/control-room", "FLIGHT_CONTROL_DIRECT_URL": "",
+        "FLIGHT_CONTROL_GATEWAY_SECRET": "", "ONEFLIGHT_GATEWAY_ENABLED": "false",
+        "ONEFLIGHT_BUNDLED_GATEWAY_ENABLED": "false", "ONEFLIGHT_TRANSPORT_MODE": "https",
+        "WEB_PORT": "8088", "FLIGHT_CONTROL_HTTP_PORT": "8089",
+        "SESSION_COOKIE_NAME": "ONEFLIGHTSESSION", "SESSION_COOKIE_PATH": "/api",
+    }
+    literals.update({key: values.get(key, default) for key, default in integration_defaults.items()})
+    for key in ("DUSHU_UPSTREAM_HOST", "DUSHU_UPSTREAM_PORT", "DUSHU_TARGET_HOST"):
+        if values.get(key): literals[key] = values[key]
+        else: derived.add(key)
+    if values.get("DUSHU_UPSTREAM_PINNED_IP"):
+        literals["DUSHU_UPSTREAM_PINNED_IP"] = values["DUSHU_UPSTREAM_PINNED_IP"]
+    bundled = literals["ONEFLIGHT_BUNDLED_GATEWAY_ENABLED"] == "true"
+    gateway_enabled = literals["ONEFLIGHT_GATEWAY_ENABLED"] == "true"
+    if bundled and gateway_enabled:
+        raise ValueError("Choose the bundled gateway or the external gateway, not both")
+    http_compat = literals["ONEFLIGHT_TRANSPORT_MODE"] == "http-ip"
+    if bundled and not literals["FLIGHT_CONTROL_GATEWAY_SECRET"]:
+        literals["FLIGHT_CONTROL_GATEWAY_SECRET"] = secrets.token_urlsafe(32)
+    for key in ("WEB_PORT", "FLIGHT_CONTROL_HTTP_PORT"):
+        if not re.fullmatch(r"[1-9][0-9]{0,4}", literals[key]) or int(literals[key]) > 65535:
+            raise ValueError(f"Invalid public port: {key}")
+    if bundled and http_compat and literals["WEB_PORT"] == literals["FLIGHT_CONTROL_HTTP_PORT"]:
+        raise ValueError("Platform and flight control need different public ports")
+    literals.update({"TZ": "Asia/Shanghai", "SERVER_PORT": "8080",
+                     "SESSION_COOKIE_SECURE": "false" if http_compat else "true" if gateway_enabled or bundled else values.get("SESSION_COOKIE_SECURE", "false"),
+                     "UPLOAD_DIRECTORY": "/app/uploads",
+                     "ALLOWED_ORIGINS": literals["ONEFLIGHT_PUBLIC_ORIGIN"] if gateway_enabled else values.get("ALLOWED_ORIGINS", "http://localhost:8088,http://127.0.0.1:8088")})
+    if bundled and http_compat:
+        # Browser origins follow the public address, independently of service connections.
+        for key in ("ONEFLIGHT_PUBLIC_ORIGIN", "FLIGHT_CONTROL_ORIGIN", "ALLOWED_ORIGINS"):
+            literals.pop(key, None)
+            derived.add(key)
     lines.extend(key + "=" + shlex.quote(value) for key, value in sorted(literals.items()))
+    if bundled and http_compat:
+        lines.extend(['ONEFLIGHT_PUBLIC_ORIGIN="http://${PUBLIC_IP}:${WEB_PORT}"',
+                      'FLIGHT_CONTROL_ORIGIN="http://${PUBLIC_IP}:${FLIGHT_CONTROL_HTTP_PORT}"',
+                      'ALLOWED_ORIGINS="${ONEFLIGHT_PUBLIC_ORIGIN}"'])
     lines.extend([
         "",
         "# 以下连接串由上方配置生成，通常无需修改。",
@@ -142,6 +193,11 @@ def runtime_settings(values, server_ip):
         'SOURCE_MQTT_URL="tcp://${MQTT_HOST}:${MQTT_PORT}"',
         'SOURCE_ALGORITHM_ORIGIN="http://${ALGORITHM_HOST}:${ALGORITHM_PORT}"',
     ])
+    for key, expression in (("DUSHU_UPSTREAM_HOST", "${GATEWAY_DOMAIN}"),
+                            ("DUSHU_UPSTREAM_PORT", "${GATEWAY_PORT}"),
+                            ("DUSHU_TARGET_HOST", "${SOURCE_TARGET_HOST}")):
+        if key in derived:
+            lines.append(key + '="' + expression + '"')
     if identity_database is not None:
         lines.append('SOURCE_IDENTITY_JDBC_URL="jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${SOURCE_IDENTITY_DATABASE}?connectionTimeZone=Asia/Shanghai&useUnicode=true&characterEncoding=UTF-8&connectTimeout=8000&socketTimeout=30000"')
     runtime_keys = sorted(set(literals) | derived | {"DB_URL", "DB_USERNAME", "DB_PASSWORD"})
@@ -149,11 +205,22 @@ def runtime_settings(values, server_ip):
     return "\n".join(lines)
 
 
+def validate_application_jar(path, *, http_ip=False):
+    with zipfile.ZipFile(path) as application:
+        entries = set(application.namelist())
+    if "BOOT-INF/classes/static/index.html" not in entries:
+        raise ValueError("The application JAR must contain the built frontend")
+    if http_ip and "BOOT-INF/classes/com/oneflight/common/DeploymentOrigins.class" not in entries:
+        raise ValueError("The reused JAR lacks HTTP IP compatibility; rebuild the current backend before packaging")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-jar", type=Path, help="Reuse an existing application JAR without changing its contents")
     parser.add_argument("--uploads-archive", type=Path, help="Reuse a private archive of the current attachments")
-    parser.add_argument("--server-ip", default="172.27.95.227", help="Default editable service address in start.sh")
+    parser.add_argument("--server-ip", default="172.27.95.227", help="Internal database and source service address in start.sh")
+    parser.add_argument("--public-ip", default="118.31.104.96", help="Browser-facing IPv4 address in start.sh")
+    parser.add_argument("--http-ip", action="store_true", help="Bundle the proxy for certificate-free IPv4 deployment (platform 8088, flight control 8089)")
     args = parser.parse_args()
     image = "oneflight:server-amd64"
 
@@ -170,7 +237,8 @@ def main():
     if missing:
         raise ValueError("Missing current configuration: " + ", ".join(missing))
     source_ip = str(ipaddress.IPv4Address(args.server_ip))
-    settings = runtime_settings(values, source_ip)
+    public_ip = str(ipaddress.IPv4Address(args.public_ip))
+    settings = runtime_settings(values, source_ip, http_ip=args.http_ip, public_ip=public_ip)
     platform = "linux/amd64"
     build_env = dict(os.environ)
     for scheme, proxy in getproxies().items():
@@ -179,6 +247,9 @@ def main():
     builder = "oneflight-bundle-builder:local"
     if not args.app_jar:
         run(["docker", "build", "--platform", platform, "--target", "backend-build", "--tag", builder, str(ROOT)], env=build_env)
+    runtime_image = "oneflight-runtime-base:bundle-builder"
+    run(["docker", "build", "--platform", platform, "--target", "runtime-base", "--tag", runtime_image, str(ROOT)], env=build_env)
+    runtime_id = output(["docker", "image", "inspect", "--platform", platform, runtime_image, "--format", "{{.Id}}"])
     staging_parent = ROOT / ".local" / "single-image"
     staging_parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with tempfile.TemporaryDirectory(prefix="build-", dir=staging_parent) as directory:
@@ -191,9 +262,7 @@ def main():
                 run(["docker", "cp", container + ":/build/target/oneflight-api-1.0.0.jar", str(context / "app.jar")], stdout=subprocess.DEVNULL)
             finally:
                 run(["docker", "rm", container], stdout=subprocess.DEVNULL)
-        with zipfile.ZipFile(context / "app.jar") as application:
-            if "BOOT-INF/classes/static/index.html" not in application.namelist():
-                raise ValueError("The application JAR must contain the built frontend")
+        validate_application_jar(context / "app.jar", http_ip=args.http_ip or values.get("ONEFLIGHT_TRANSPORT_MODE") == "http-ip")
 
         if args.uploads_archive:
             shutil.copyfile(args.uploads_archive.resolve(strict=True), context / "uploads.tar.gz")
@@ -222,9 +291,10 @@ def main():
         for filename in ("Dockerfile", "entrypoint.sh"):
             shutil.copyfile(ROOT / "deploy" / "standalone" / filename, context / filename)
         (context / "entrypoint.sh").chmod(0o755)
-        build_command = ["docker", "build", "--platform", platform, "--tag", image]
+        build_command = ["docker", "build", "--platform", platform, "--build-arg", "RUNTIME_IMAGE=" + runtime_image, "--tag", image]
         release_id = None
         release_digest = hashlib.sha256()
+        release_digest.update(b"runtime-base\0" + runtime_id.encode())
         for filename in ("Dockerfile", "entrypoint.sh", "app.jar", "uploads.tar.gz"):
             release_digest.update(filename.encode() + b"\0")
             with (context / filename).open("rb") as payload:
@@ -236,7 +306,8 @@ def main():
 
     image_id = output(["docker", "image", "inspect", "--platform", platform, image, "--format", "{{.Id}}"])
     metadata = {"image": image, "imageId": image_id, "platform": platform,
-                "sourceIp": source_ip, "businessDatabase": source_ip + ":" + str(urlsplit(values["DB_URL"].removeprefix("jdbc:")).port or 3306) + "/oneflight",
+                "sourceIp": source_ip, "publicIp": public_ip,
+                "businessDatabase": source_ip + ":" + str(urlsplit(values["DB_URL"].removeprefix("jdbc:")).port or 3306) + "/oneflight",
                 "configuration": "editable start.sh; no image credentials", "attachmentsIncluded": True,
                 "builtAt": datetime.datetime.now(datetime.timezone.utc).isoformat()}
     if release_id:

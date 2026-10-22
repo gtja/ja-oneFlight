@@ -31,6 +31,14 @@ public class ProviderHttpClient {
         return read(base + path, body, Map.of("Authorization", "Bearer " + properties.token(),
                 "_origin_target_host", properties.targetHost(), "Accept-Language", "zh"));
     }
+    /** Personal entry authorization never borrows the configured service account's device grants. */
+    public JsonNode personalDeviceTree(String token) {
+        if (token == null || token.isBlank()) { throw com.oneflight.common.ApiException.forbidden(); }
+        String url = properties.gatewayOrigin() + "/proxyApi/otherService/"
+                + properties.gatewaySystem() + "/controlServer/device/list/tree/v4";
+        return read(url, Map.of(), Map.of("Authorization", "Bearer " + token,
+                "_origin_target_host", properties.targetHost(), "Accept-Language", "zh"));
+    }
     public JsonNode algorithm(String path, Map<String, Object> body) {
         if (!path.matches("/algorithm/(app/(list|statistics|tag/statistics)|deploy/device/list)(\\?[^#]*)?")) {
             throw new IllegalArgumentException("Unsupported algorithm read operation");

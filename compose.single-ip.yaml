@@ -1,0 +1,18 @@
+# Optional single application image, without domain names or certificates.
+# docker compose -f compose.production.yaml -f compose.single-ip.yaml up -d
+services:
+  app:
+    healthcheck:
+      test: [CMD, /opt/oneflight/healthcheck.sh]
+    ports:
+      - '${FLIGHT_CONTROL_HTTP_PORT:-8089}:8089'
+    environment:
+      ONEFLIGHT_BUNDLED_GATEWAY_ENABLED: 'true'
+      ONEFLIGHT_TRANSPORT_MODE: http-ip
+      ONEFLIGHT_PUBLIC_ORIGIN: http://${SERVER_IP:?Configure server IPv4 address}:${WEB_PORT:-8088}
+      FLIGHT_CONTROL_ORIGIN: http://${SERVER_IP:?Configure server IPv4 address}:${FLIGHT_CONTROL_HTTP_PORT:-8089}
+      FLIGHT_CONTROL_GATEWAY_SECRET: ${FLIGHT_CONTROL_GATEWAY_SECRET:-}
+      SESSION_COOKIE_SECURE: 'false'
+      SESSION_COOKIE_NAME: ONEFLIGHTSESSION
+      SESSION_COOKIE_PATH: /api
+      ALLOWED_ORIGINS: http://${SERVER_IP:?Configure server IPv4 address}:${WEB_PORT:-8088}

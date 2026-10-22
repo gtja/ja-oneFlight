@@ -24,7 +24,7 @@ check_container_owner() {
         || fail '无法检查现有容器的标识。'
     ports="$("$DOCKER_BIN" container inspect --format '{{range (index .HostConfig.PortBindings "8080/tcp")}}{{.HostPort}};{{end}}' "$CONTAINER")" \
         || fail '无法检查现有容器的端口。'
-    [[ "$configured_image" == "$IMAGE" && "$label" == "$LABEL_VALUE" && "$ports" == '8088;' ]] \
+    [[ "$configured_image" == "$IMAGE" && "$label" == "$LABEL_VALUE" && "$ports" =~ ^[0-9]{1,5}\;$ ]] \
         || fail '同名 oneflight-server 容器不属于这个安装包，本次没有操作。'
 }
 

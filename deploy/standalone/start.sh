@@ -20,6 +20,11 @@ BACKUP_CONTAINER=''
 NEW_CONTAINER_CREATED=false
 CONFIG_HASH=''
 RUNTIME_DOCKER_ARGS=()
+GATEWAY_DOCKER_ARGS=()
+GATEWAY_ENABLED=false
+BUNDLED_GATEWAY_ENABLED=false
+EXTRA_PUBLISH_ARGS=()
+PUBLISH_ADDRESS=8088:8080
 
 say() { printf '%s\n' "$*"; }
 
@@ -31,8 +36,18 @@ fail() {
     exit 1
 }
 
+valid_server_ipv4() {
+    local octet
+    local -a parts
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    IFS=. read -r -a parts <<< "$1"
+    for octet in "${parts[@]}"; do
+        [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] && (( 10#$octet <= 255 )) || return 1
+    done
+}
+
 validate_runtime_settings() {
-    local declaration key value seen='|' hash_output
+    local declaration key value seen='|' hash_output gateway_secret
     declaration="$(declare -p RUNTIME_KEYS 2>/dev/null)" \
         || fail '启动脚本缺少运行配置，请使用正式安装包中的 start.sh。'
     [[ "$declaration" == 'declare -a'* && ${#RUNTIME_KEYS[@]} -gt 0 ]] \
@@ -48,6 +63,47 @@ validate_runtime_settings() {
         export "$key"
         RUNTIME_DOCKER_ARGS+=(--env "$key")
     done
+    GATEWAY_ENABLED="${ONEFLIGHT_GATEWAY_ENABLED:-false}"
+    BUNDLED_GATEWAY_ENABLED="${ONEFLIGHT_BUNDLED_GATEWAY_ENABLED:-false}"
+    WEB_PORT="${WEB_PORT:-8088}"
+    FLIGHT_CONTROL_HTTP_PORT="${FLIGHT_CONTROL_HTTP_PORT:-8089}"
+    for key in WEB_PORT FLIGHT_CONTROL_HTTP_PORT; do
+        value="${!key}"
+        [[ "$value" =~ ^[1-9][0-9]{0,4}$ ]] && (( 10#$value <= 65535 )) \
+            || fail "配置项 ${key} 必须为 1 至 65535 的端口。"
+    done
+    PUBLISH_ADDRESS="$WEB_PORT:8080"
+    case "$BUNDLED_GATEWAY_ENABLED" in
+        false) ;;
+        true)
+            [[ "$GATEWAY_ENABLED" == false ]] || fail '内置代理与外部网关不能同时启用。'
+            [[ "${ONEFLIGHT_TRANSPORT_MODE:-https}" == http-ip ]] \
+                || fail '单镜像内置代理请使用 http-ip 兼容模式；HTTPS 可继续使用外部网关。'
+            [[ "$WEB_PORT" != "$FLIGHT_CONTROL_HTTP_PORT" ]] || fail '平台与飞控不能使用同一个端口。'
+            valid_server_ipv4 "$SERVER_IP" || fail 'SERVER_IP 必须填写有效的 IPv4 地址。'
+            valid_server_ipv4 "${PUBLIC_IP:-}" || fail 'PUBLIC_IP 必须填写浏览器可访问的 IPv4 地址。'
+            [[ "${ONEFLIGHT_PUBLIC_ORIGIN:-}" == "http://${PUBLIC_IP}:${WEB_PORT}" \
+                && "${FLIGHT_CONTROL_ORIGIN:-}" == "http://${PUBLIC_IP}:${FLIGHT_CONTROL_HTTP_PORT}" ]] \
+                || fail '兼容模式地址必须与 PUBLIC_IP 及平台、飞控端口一致。'
+            [[ "${SESSION_COOKIE_SECURE:-false}" == false ]] || fail 'HTTP 兼容模式不能设置 Secure Cookie。'
+            gateway_secret="${FLIGHT_CONTROL_GATEWAY_SECRET:-}"
+            [[ "${#gateway_secret}" -ge 32 && "$gateway_secret" =~ ^[A-Za-z0-9_-]+$ ]] \
+                || fail '内置代理密钥缺失或格式错误，请重新打包。'
+            EXTRA_PUBLISH_ARGS=(--publish "$FLIGHT_CONTROL_HTTP_PORT:8089")
+            ;;
+        *) fail 'ONEFLIGHT_BUNDLED_GATEWAY_ENABLED 必须为 true 或 false。' ;;
+    esac
+    case "$GATEWAY_ENABLED" in
+        false) ;;
+        true)
+            [[ "${ONEFLIGHT_PUBLIC_ORIGIN:-}" == https://* && "${FLIGHT_CONTROL_ORIGIN:-}" == https://* ]] \
+                || fail '网关模式必须配置平台和飞控独立 HTTPS 地址。'
+            [[ -n "${FLIGHT_CONTROL_GATEWAY_SECRET:-}" ]] || fail '网关模式缺少启动票据通道密钥。'
+            PUBLISH_ADDRESS="127.0.0.1:$WEB_PORT:8080"
+            GATEWAY_DOCKER_ARGS=(--network oneflight-gateway)
+            ;;
+        *) fail 'ONEFLIGHT_GATEWAY_ENABLED 必须为 true 或 false。' ;;
+    esac
     for key in DB_URL DB_USERNAME DB_PASSWORD; do
         case "$seen" in *"|$key|"*) ;; *) fail "运行配置缺少 ${key}。" ;; esac
         [[ -n "${!key}" ]] || fail "配置项 ${key} 不能为空。"
@@ -110,7 +166,7 @@ check_container_owner() {
         || fail '无法检查现有容器的标识。'
     ports="$("$DOCKER_BIN" container inspect --format '{{range (index .HostConfig.PortBindings "8080/tcp")}}{{.HostPort}};{{end}}' "$name")" \
         || fail '无法检查现有容器的端口。'
-    [[ "$configured_image" == "$IMAGE" && "$label" == "$LABEL_VALUE" && "$ports" == '8088;' ]] \
+    [[ "$configured_image" == "$IMAGE" && "$label" == "$LABEL_VALUE" && "$ports" =~ ^[0-9]{1,5}\;$ ]] \
         || fail "现有 ${name} 容器不属于这个安装包，本次没有操作。"
 }
 
@@ -233,22 +289,26 @@ ensure_image() {
 }
 
 check_port_available() {
-    local rows row name
+    local rows row name port
+    local -a ports=("$WEB_PORT")
+    if [[ "$BUNDLED_GATEWAY_ENABLED" == true ]]; then ports+=("$FLIGHT_CONTROL_HTTP_PORT"); fi
     rows="$("$DOCKER_BIN" ps --format '{{.Names}}|{{.Ports}}')" \
         || fail '无法检查端口占用。'
-    while IFS= read -r row; do
+    for port in "${ports[@]}"; do
+      while IFS= read -r row; do
         case "$row" in
-            *':8088->'*)
+            *":${port}->"*)
                 name="${row%%|*}"
                 [[ "$name" == "$CONTAINER" ]] \
-                    || fail "端口 8088 已被容器 $name 占用，请自行调整占用服务后重试。"
+                    || fail "端口 ${port} 已被容器 $name 占用，请自行调整占用服务后重试。"
                 ;;
         esac
-    done <<< "$rows"
-    if command -v lsof >/dev/null 2>&1 \
-        && lsof -nP -iTCP:8088 -sTCP:LISTEN -t >/dev/null 2>&1; then
-        fail '端口 8088 已被其他程序占用，请自行调整占用服务后重试。'
-    fi
+      done <<< "$rows"
+      if command -v lsof >/dev/null 2>&1 \
+          && lsof -nP -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+          fail "端口 ${port} 已被其他程序占用，请自行调整占用服务后重试。"
+      fi
+    done
 }
 
 startup_diagnostics() {
@@ -303,6 +363,14 @@ start_service() {
     local state start_error
     validate_runtime_settings
     require_docker
+    if [[ "$GATEWAY_ENABLED" == true ]]; then
+        if ! "$DOCKER_BIN" network inspect oneflight-gateway >/dev/null 2>&1; then
+            "$DOCKER_BIN" network create --label com.oneflight.gateway=true oneflight-gateway >/dev/null \
+                || fail '无法创建 HTTPS 网关网络。'
+        fi
+        [[ "$("$DOCKER_BIN" network inspect --format '{{index .Labels "com.oneflight.gateway"}}' oneflight-gateway)" == true ]] \
+            || fail '同名网络未标记为一网统飞网关网络，请检查后重试。'
+    fi
     [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ && "$EXPECTED_RELEASE_ID" =~ ^[0-9a-f]{64}$ ]] \
         || fail '启动脚本尚未完成打包，请使用正式安装包中的 start.sh。'
     if container_exists; then
@@ -320,7 +388,9 @@ start_service() {
             --name "$CONTAINER" --label "$LABEL_KEY=$LABEL_VALUE" \
             --label "com.oneflight.previous-container=$BACKUP_CONTAINER" \
             --label "com.oneflight.config-sha256=$CONFIG_HASH" \
-            --restart unless-stopped --stop-timeout 70 --publish 8088:8080 \
+            --restart unless-stopped --stop-timeout 70 --publish "$PUBLISH_ADDRESS" \
+            ${EXTRA_PUBLISH_ARGS[@]+"${EXTRA_PUBLISH_ARGS[@]}"} \
+            ${GATEWAY_DOCKER_ARGS[@]+"${GATEWAY_DOCKER_ARGS[@]}"} \
             "${RUNTIME_DOCKER_ARGS[@]}" "$IMAGE" >/dev/null \
             || fail '创建服务失败，请检查 Docker 状态和服务器磁盘空间。'
         NEW_CONTAINER_CREATED=true
@@ -334,14 +404,20 @@ start_service() {
             if ! start_error="$("$DOCKER_BIN" container start "$CONTAINER" 2>&1)"; then
                 case "$start_error" in
                     *'port is already allocated'*|*'address already in use'*|*'Ports are not available'*|*'failed to bind'*)
-                        startup_failed '端口 8088 已被其他程序占用，请自行调整占用服务后重试。' ;;
+                        startup_failed '平台或飞控端口已被其他程序占用，请自行调整占用服务后重试。' ;;
                     *) startup_failed '服务启动失败，请根据上方日志排查。' ;;
                 esac
             fi
             ;;
     esac
     wait_until_healthy
-    say '服务已启动，请在浏览器访问 http://服务器IP:8088。'
+    if [[ "$BUNDLED_GATEWAY_ENABLED" == true ]]; then
+        say "服务已启动，访问 ${ONEFLIGHT_PUBLIC_ORIGIN}；飞控入口已包含在同一个镜像中。"
+    elif [[ "$GATEWAY_ENABLED" == true ]]; then
+        say "应用已启动；启动独立 HTTPS 网关后访问 ${ONEFLIGHT_PUBLIC_ORIGIN}。"
+    else
+        say "服务已启动，请在浏览器访问 http://服务器IP:${WEB_PORT}。"
+    fi
     [[ -z "$BACKUP_CONTAINER" ]] || say "旧容器已保留：${BACKUP_CONTAINER}。"
 }
 

@@ -1,12 +1,20 @@
 # 架构与业务约定
 
-采用 React/TypeScript 单页应用、一个 Java/Spring Boot 应用和独立 MySQL 8.4 业务库。开发环境可使用持久化 H2；真实来源通过 HTTP、只读 JDBC 和 MQTT 适配，不复用 `ja-oneflight-demo` 业务实现。
+采用 React/TypeScript 单页应用、一个 Java/Spring Boot 应用和独立 MySQL 8.4 业务库。本地开发与当前服务器部署共用配置指定的远端业务库，`DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 为必填项，普通应用不再回退文件 H2。H2 仅用于 `test` profile 的合成自动化测试；真实来源仍通过 HTTP、只读 JDBC 和 MQTT 适配，不复用 `ja-oneflight-demo` 业务实现。
+
+## 代码组织与飞控入口
+
+开发边界、模块位置和验证命令见 [开发规范](DEVELOPMENT.md)，Agent 执行约定见根 [AGENTS.md](../AGENTS.md)。前端保留 `api.ts` 公共入口，将 HTTP、类型和 React Query Hook 分离；资源与服务页面的专属配置和展示组件放在各自子目录。后端保持现有应用及包结构，候选查询装配和列表组织从工作流编排中分离，公共业务策略继续复用。
+
+当前 `App` 通过 `FlightWorkspace` 挂载飞控入口。以下本地演示控件与未配置命令适配器的说明仅适用于相应本地组件；嵌入模式保留原站的真实界面和控制能力。任务放行、个人 4A 身份、网关 `entry`/`continue` 和会话清理的现行约定见 [嵌入网关说明](../deploy/gateway/README.md)，不能将本地演示的无命令行为推广到嵌入站。
 
 ## 一体镜像托管与静态资源
 
-生产根 `Dockerfile` 将 Vite 产物放入 JAR 的 `classpath:/static/`，由同一非 root Java 21 JVM 提供页面和 API；运行时只需 `app/mysql` 两个服务，MySQL 与 uploads 各自使用持久卷。原三服务方案继续用于本机开发与已有交付；正式服务器的固定项目及维护方式见 [PRODUCTION.md](PRODUCTION.md)。
+当前 HTTP IP 单镜像使用启动脚本指定的远端业务 MySQL，本地原生开发沿用 `.env` 中的同一连接；来源配置文件只覆盖 `SOURCE_`，不能改写业务库账号或连接。此前已经存在的 MySQL/H2 文件和备份不因切换入口被删除；历史数据恢复须单独核对并保留业务 ID、4A 不可变身份关联、岗位和授权。旧 Compose 的本地 MySQL 仅作为显式兼容模式保留。
 
-正式项目 `oneflight-prod` 的业务库 `oneflight` 及 uploads 卷与本机项目隔离，不迁入本机测试业务。来源地址通过私有 `.env` 配置；同机服务可使用等价内网地址，来源账号权限不随网络地址改变。算法目录按用户选择使用本机来源，实际读取与部署证据见生产发布记录。
+生产根 `Dockerfile` 将 Vite 产物放入 JAR 的 `classpath:/static/`，由同一非 root Java 21 JVM 提供页面和 API。当前单镜像直接使用远端 MySQL，不再额外启动业务数据库；旧 `app/mysql` 双服务与三服务方案仅保留显式兼容入口，MySQL 与 uploads 的原卷不会被删除。旧项目维护方式见 [PRODUCTION.md](PRODUCTION.md)。
+
+历史 `47.96.225.165` 上的 `oneflight-prod` 项目保留当时独立业务库和 uploads 卷的发布记录；其“不迁入本机测试业务”约定不描述当前 `118.31.104.96` 部署。当前本地开发与服务器访问同一个 `oneflight` 库，服务器可用等价内网地址 `172.27.95.227`，这不会改变数据库中的业务 ID 或授权。来源地址通过私有配置管理，来源账号权限不随网络地址改变。
 
 Spring Security 仅对页面入口、`/index.html`、`/logo.svg`、`/assets/**` 和 `/healthz` 放行 GET/HEAD，API 继续使用会话、权限及 CSRF 校验；原健康、登录与 OpenAPI 白名单保持独立。不把静态资源放行扩展到写请求，静态资源不存在时保留 404，不把 API 或缺失资源改为返回 SPA 页面。
 

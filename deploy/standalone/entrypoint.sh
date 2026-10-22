@@ -112,6 +112,6 @@ if [ -n "$gateway_hostname" ] || [ -n "$gateway_address" ]; then
 fi
 unset gateway_hostname gateway_address
 
-printf '[OneFlight] 正在启动应用，监听端口 8080。\n'
-# su-exec replaces itself with Java, which receives Docker TERM directly.
-exec su-exec 10001:10001 java -XX:MaxRAMPercentage=75.0 -jar /app/app.jar
+printf '[OneFlight] 正在启动应用。\n'
+# The runtime handles Java alone or the bundled proxy and forwards Docker TERM to both.
+exec su-exec 10001:10001 /opt/oneflight/bundled-entrypoint.sh

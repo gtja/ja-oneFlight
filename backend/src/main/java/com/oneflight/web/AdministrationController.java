@@ -22,16 +22,22 @@ public class AdministrationController {
     private final ScopeService scope;
     private final PasswordEncoder encoder;
     private final AuditService audit;
+    private final FourAProperties fourA;
+    private final FourAIdentityService identities;
 
     public AdministrationController(
             WorkflowService service,
             ScopeService scope,
             PasswordEncoder encoder,
-            AuditService audit) {
+            AuditService audit,
+            FourAProperties fourA,
+            FourAIdentityService identities) {
         this.service = service;
         this.scope = scope;
         this.encoder = encoder;
         this.audit = audit;
+        this.fourA = fourA;
+        this.identities = identities;
     }
 
     @GetMapping("/users")
@@ -44,15 +50,16 @@ public class AdministrationController {
         return ApiResponse.ok(
                 PageResult.of(
                         service.users().findAll().stream()
+                                .filter(x -> !fourA.isFourA() || identities.isFourAAccount(x.id))
                                 .filter(x -> scope.canAccess(x.organizationId, null))
                                 .filter(x -> role == null || x.role == role)
+                                .map(identities::userView)
                                 .filter(
                                         x ->
                                                 query == null
                                                         || query.isBlank()
-                                                        || x.displayName.contains(query)
-                                                        || x.username.contains(query))
-                                .map(UserAccount::view)
+                                                        || String.valueOf(x.get("displayName")).contains(query)
+                                                        || String.valueOf(x.get("username")).contains(query))
                                 .toList(),
                         page,
                         pageSize));
@@ -72,6 +79,9 @@ public class AdministrationController {
 
     private ApiResponse<?> saveUser(String id, UserInput in) {
         scope.requireRole(Role.ADMIN);
+        if (fourA.isFourA())
+            throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    "IDENTITY_MANAGED_BY_4A", "账号身份由 4A 管理，请通过业务权限入口配置平台角色和授权");
         if (!service.organizations().existsById(in.organizationId()))
             throw ApiException.invalid("组织不存在");
         var u =
@@ -105,6 +115,37 @@ public class AdministrationController {
         service.users().save(u);
         audit.record("USER", u.id, u.organizationId, null, id == null && "BUSINESS_INITIALIZATION".equals(RecordProvenance.view(u.provenance).get("origin")) ? "INITIALIZE" : id == null ? "CREATE" : "UPDATE", null);
         return ApiResponse.ok(u.view());
+    }
+
+    @PutMapping("/users/{id}/permissions")
+    @Transactional
+    public ApiResponse<?> updateBusinessPermissions(
+            @PathVariable String id, @Valid @RequestBody BusinessPermissionsInput in) {
+        scope.requireRole(Role.ADMIN);
+        if (!service.users().existsById(id)) throw ApiException.missing();
+        if (fourA.isFourA() && !identities.isFourAAccount(id))
+            throw ApiException.invalid("此账号尚未通过 4A 身份认证");
+        if (!service.organizations().existsById(in.organizationId()))
+            throw ApiException.invalid("组织不存在");
+        if (Objects.equals(id, scope.currentUser().id())
+                && (in.role() != Role.ADMIN || Boolean.FALSE.equals(in.enabled())))
+            throw ApiException.invalid("不能停用或降级当前管理员");
+        Set<String> grants = in.organizationIds() == null ? Set.of() : in.organizationIds();
+        if (grants.stream().anyMatch(org -> org == null || !service.organizations().existsById(org)))
+            throw ApiException.invalid("授权组织不存在");
+        // Identity metadata refresh locks identity before user. Use the same order here; both
+        // permission assignment and the local grants commit in this transaction together.
+        identities.grantBusinessAccess(id);
+        UserAccount account = service.users().findLockedById(id).orElseThrow(ApiException::missing);
+        account.role = in.role();
+        account.organizationId = in.organizationId();
+        account.regions = String.join(",", in.regions() == null ? Set.of() : in.regions());
+        account.deviceIds = String.join(",", in.deviceIds() == null ? Set.of() : in.deviceIds());
+        account.organizationIds = in.role() == Role.DISPATCH ? String.join(",", grants) : "";
+        account.enabled = in.enabled() == null || in.enabled();
+        service.users().save(account);
+        audit.record("USER", id, account.organizationId, null, "UPDATE_PERMISSIONS", null);
+        return ApiResponse.ok(identities.userView(account));
     }
 
     @GetMapping("/audit")

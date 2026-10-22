@@ -1,0 +1,13 @@
+proxy_set_header X-Oneflight-Gateway-Secret ${FLIGHT_CONTROL_GATEWAY_SECRET};
+proxy_set_header Host $http_host;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header Cookie '';
+# This include is used only by our bootstrap and logout endpoints. Their
+# HttpOnly entry-grant cookie must reach the browser; source Set-Cookie remains
+# hidden in the separate upstream proxy location.
+proxy_hide_header X-Frame-Options;
+proxy_hide_header Referrer-Policy;
+# BFF emits the narrower CSP for bootstrap/logout; do not overwrite it.
+proxy_buffering off;
+proxy_cache off;
+access_log off;
