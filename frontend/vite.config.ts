@@ -1,7 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { canonicalDevOriginPlugin } from "./devServer.ts";
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    canonicalDevOriginPlugin(process.env.ONEFLIGHT_DEV_PUBLIC_ORIGIN),
+  ],
   server: {
     port: 5173,
     proxy: {

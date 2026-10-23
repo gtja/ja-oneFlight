@@ -3,10 +3,31 @@ import {
   hasMapObjectLocation,
   mapObjectGeometry,
   mapObjectLocation,
+  mapObjectsLocation,
   objectCoordinates,
 } from "./mapObjectFocus";
 
 describe("地图对象的真实位置与几何范围", () => {
+  it("区域聚焦只使用可定位对象，不伪造空区域或未知坐标", () => {
+    expect(
+      mapObjectsLocation([{ id: "unknown", longitude: null, latitude: null }]),
+    ).toBeNull();
+    expect(
+      mapObjectsLocation([{ id: "point", longitude: 120.1, latitude: 30.2 }]),
+    ).toEqual({ point: [120.1, 30.2] });
+    expect(
+      mapObjectsLocation([
+        { id: "a", longitude: 120.1, latitude: 30.2 },
+        { id: "b", longitude: 120.3, latitude: 30.4 },
+        { id: "unknown" },
+      ]),
+    ).toEqual({
+      bounds: [
+        [120.1, 30.2],
+        [120.3, 30.4],
+      ],
+    });
+  });
   it("接受来源经纬度和遥测，拒绝缺失值、空串、布尔值与越界坐标", () => {
     expect(
       objectCoordinates({

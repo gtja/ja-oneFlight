@@ -63,6 +63,135 @@ afterEach(() => {
 });
 
 describe("航线编辑器的真实交互契约", () => {
+  it("空域全链路使用边界点文案，地图显示完整内环，保存独立高度且保留来源高程", async () => {
+    const polygon = {
+      type: "Polygon",
+      coordinates: [
+        [
+          [120, 30, 42, 7],
+          [120.1, 30, 43, 8],
+          [120.1, 30.1, 44, 9],
+          [120, 30, 42, 7],
+        ],
+        [
+          [120.02, 30.01, 50],
+          [120.03, 30.01, 50],
+          [120.03, 30.02, 50],
+          [120.02, 30.01, 50],
+        ],
+      ],
+    };
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <EntityForm
+        fields={[
+          {
+            key: "geometry",
+            label: "空域边界绘制",
+            type: "geometry",
+            geometryMode: "AIRSPACE",
+            required: true,
+          },
+        ]}
+        initial={{
+          geometry: polygon,
+          airspaceProfile: {
+            reference: "AMSL",
+            lowerHeightMeters: -10,
+            upperHeightMeters: 90,
+          },
+        }}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(map.current!.drawing!.innerRings).toEqual([
+      polygon.coordinates[1].map(([x, y]) => [x, y]),
+    ]);
+    expect(screen.queryByRole("button", { name: /选择航点/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "选择边界点 1" })).toBeTruthy();
+    expect(screen.queryByText("起点")).toBeNull();
+    expect(screen.queryByText("终点")).toBeNull();
+    act(() => map.current!.drawing!.onMove(0, [119.9, 29.9]));
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "高度上限（米）" }),
+      { target: { value: "120" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      airspaceProfile: {
+        reference: "AMSL",
+        lowerHeightMeters: -10,
+        upperHeightMeters: 120,
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [119.9, 29.9, 42, 7],
+            polygon.coordinates[0][1],
+            polygon.coordinates[0][2],
+            [119.9, 29.9, 42, 7],
+          ],
+          polygon.coordinates[1],
+        ],
+      },
+    });
+    expect(onSubmit.mock.calls[0][0].geometryContext).not.toHaveProperty(
+      "flightProfile",
+    );
+  });
+  it("缺少高度基准时拒绝保存，选定离地基准后才能提交", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <EntityForm
+        fields={[
+          {
+            key: "geometry",
+            label: "空域边界",
+            type: "geometry",
+            geometryMode: "AIRSPACE",
+          },
+        ]}
+        initial={{
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [120, 30],
+                [121, 30],
+                [121, 31],
+                [120, 30],
+              ],
+            ],
+          },
+        }}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "高度上限（米）" }),
+      { target: { value: "120" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("填写空域高度时请选择离地或海拔基准").length,
+      ).toBeGreaterThan(0),
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("combobox", { name: "高度基准" }));
+    fireEvent.click(screen.getByRole("option", { name: "离地高度（AGL）" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(onSubmit.mock.calls[0][0].airspaceProfile).toEqual({
+      reference: "AGL",
+      lowerHeightMeters: null,
+      upperHeightMeters: 120,
+    });
+  });
   it("空间辅助开关只影响视图，跨全屏返回保留且不改航点或规划高度", () => {
     const onChange = vi.fn();
     const onContextChange = vi.fn();

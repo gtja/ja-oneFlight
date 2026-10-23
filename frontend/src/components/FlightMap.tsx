@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import maplibregl, { type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, Geometry } from "geojson";
@@ -7,7 +7,9 @@ import {
   mapObjectGeometry,
   mapObjectLocation,
   objectCoordinates,
+  type MapObjectLocation,
 } from "./mapObjectFocus";
+import { resolveDevicePresentation } from "../devicePresentation";
 import {
   BUILDING_LAYER_IDS,
   BUILDING_SOURCE_ID,
@@ -27,6 +29,8 @@ export type { MapBuilding } from "./mapBuildings";
 export type MapDrawing = {
   mode: "ROUTE" | "AIRSPACE";
   points: [number, number][];
+  controls?: { point: [number, number]; label: string }[];
+  innerRings?: [number, number][][];
   selectedIndex: number | null;
   heightMeters?: number[];
   showGroundProjection?: boolean;
@@ -38,7 +42,21 @@ export type MapDrawing = {
   onSelect: (index: number) => void;
   onMove: (index: number, point: [number, number]) => void;
 };
-import { Crosshair, Minus, Plus, Scan, Building2 } from "lucide-react";
+import {
+  Crosshair,
+  Minus,
+  Plus,
+  Scan,
+  Building2,
+  Drone,
+  Warehouse,
+  Camera,
+  Radar,
+  Cpu,
+  Box,
+  Route as RouteIcon,
+  Hexagon,
+} from "lucide-react";
 import { useData, type Entity } from "../api";
 const imagery =
   import.meta.env.VITE_IMAGERY_TILES ||
@@ -114,6 +132,20 @@ export const coordinates = objectCoordinates;
 const EMPTY_OBJECTS: Entity[] = [];
 const EMPTY_LAYERS: Record<string, boolean> = {};
 const BUSINESS_LAYER_IDS = ["business-fill", "business-hit", "business-line"];
+const markerIcons = {
+  AIRCRAFT: Drone,
+  DOCK: Warehouse,
+  CAMERA: Camera,
+  RADAR: Radar,
+  COMPUTE: Cpu,
+  UNKNOWN: Box,
+  ROUTE: RouteIcon,
+  AIRSPACE: Hexagon,
+};
+export type AreaFocusRequest = {
+  location: MapObjectLocation | null;
+  revision: number;
+};
 const objectName = (entity: Entity) =>
   String(entity.title || entity.name || entity.deviceName || entity.id);
 const motionDuration = (duration: number) =>
@@ -174,11 +206,14 @@ export default function FlightMap({
   objects = EMPTY_OBJECTS,
   onSelect,
   compact = false,
+  initialThreeD,
   layers = EMPTY_LAYERS,
   onMapPoint,
   focusObject,
   selectedObjectId,
   focusRequest,
+  areaFocusRequest,
+  onResetView,
   drawing,
   onBuildingSelect,
   selectedBuildingId,
@@ -192,8 +227,11 @@ export default function FlightMap({
   focusObject?: Entity;
   selectedObjectId?: string;
   focusRequest?: { entity: Entity; revision: number };
+  areaFocusRequest?: AreaFocusRequest;
+  onResetView?: () => void;
   onSelect?: (entity: Entity) => void;
   compact?: boolean;
+  initialThreeD?: boolean;
   layers?: Record<string, boolean>;
   onMapPoint?: (point: [number, number]) => void;
   drawing?: MapDrawing;
@@ -206,6 +244,8 @@ export default function FlightMap({
   flightStreamKey?: string;
 }) {
   const hasFlightScene = simulation || flightReports !== undefined;
+  const markerPrefix = useId();
+  const focusedAreaRevision = useRef<number | null>(null);
   const config = useData<Entity>("/config");
   const editing = Boolean(drawing);
   const holder = useRef<HTMLDivElement>(null);
@@ -233,7 +273,7 @@ export default function FlightMap({
     drawing?.mode === "ROUTE" ? "closeup" : "overview",
   );
   const [threeD, setThreeD] = useState(
-    drawing?.mode === "ROUTE" || (!onMapPoint && !drawing),
+    initialThreeD ?? (drawing?.mode === "ROUTE" || (!onMapPoint && !drawing)),
   );
   const pointHandler = useRef(onMapPoint);
   pointHandler.current = onMapPoint;
@@ -312,11 +352,13 @@ export default function FlightMap({
         center: [120.155, 30.27],
         zoom: 11.2,
         pitch:
-          drawing?.mode === "ROUTE"
-            ? ROUTE_CLOSEUP_PITCH
-            : !onMapPoint && !drawing
-              ? 55
-              : 0,
+          initialThreeD === false
+            ? 0
+            : drawing?.mode === "ROUTE"
+              ? ROUTE_CLOSEUP_PITCH
+              : !onMapPoint && !drawing
+                ? 55
+                : 0,
         bearing: -10,
         attributionControl: { compact: true },
       });
@@ -686,7 +728,13 @@ export default function FlightMap({
     const points = drawing.points;
     const geometry: Geometry | null =
       drawing.mode === "AIRSPACE" && points.length >= 3
-        ? { type: "Polygon", coordinates: [[...points, points[0]]] }
+        ? {
+            type: "Polygon",
+            coordinates: [
+              [...points, points[0]],
+              ...(drawing.innerRings || []),
+            ],
+          }
         : points.length >= 2
           ? { type: "LineString", coordinates: points }
           : null;
@@ -742,22 +790,26 @@ export default function FlightMap({
       elevatedRoute.current = null;
     }
     if (!elevated)
-      points.forEach((point, index) => {
+      (
+        drawing.controls ?? points.map((point) => ({ point, label: "" }))
+      ).forEach(({ point, label }, index) => {
         const element = document.createElement("button");
         element.type = "button";
-        element.className = `drawing-waypoint${index === drawing.selectedIndex ? " selected" : ""}${index === 0 ? " first" : index === points.length - 1 ? " last" : ""}`;
-        element.textContent = String(index + 1);
+          element.className = `drawing-waypoint${label ? " shape-control" : ""}${index === drawing.selectedIndex ? " selected" : ""}${drawing.mode === "ROUTE" ? (index === 0 ? " first" : index === points.length - 1 ? " last" : "") : ""}`;
+        element.textContent = label || String(index + 1);
         const suffix =
-          index === 0
-            ? " · 起点"
-            : index === points.length - 1
-              ? " · 终点"
-              : "";
+          drawing.mode !== "ROUTE"
+            ? ""
+            : index === 0
+              ? " · 起点"
+              : index === points.length - 1
+                ? " · 终点"
+                : "";
         element.setAttribute(
           "aria-label",
-          `航点 ${index + 1}${suffix}，可拖动调整`,
+          `${label || `${drawing.mode === "ROUTE" ? "航点" : "边界点"} ${index + 1}${suffix}`}，可拖动调整`,
         );
-        element.title = `航点 ${index + 1}${suffix} · 拖动调整位置`;
+        element.title = `${label || `${drawing.mode === "ROUTE" ? "航点" : "边界点"} ${index + 1}${suffix}`} · 拖动调整位置`;
         element.setAttribute(
           "aria-pressed",
           String(index === drawing.selectedIndex),
@@ -795,7 +847,8 @@ export default function FlightMap({
       request.index < 0
     )
       return;
-    const point = drawing.points[request.index];
+    const point =
+      drawing.controls?.[request.index]?.point ?? drawing.points[request.index];
     if (!point || !point.every(Number.isFinite)) return;
     if (drawing.mode === "ROUTE" && threeD) closeupDrawing(request.index);
     else
@@ -814,13 +867,22 @@ export default function FlightMap({
       focusedId.current === focusObject.id
     )
       return;
-    const point = coordinates(focusObject);
-    if (!point) return;
-    map.current.flyTo({
-      center: point,
-      zoom: 14,
-      duration: motionDuration(500),
-    });
+    const location = mapObjectLocation(focusObject);
+    if (!location) return;
+    if ("bounds" in location) {
+      map.current.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
+      map.current.fitBounds(location.bounds, {
+        padding: 48,
+        maxZoom: 16,
+        duration: motionDuration(500),
+      });
+    } else {
+      map.current.flyTo({
+        center: location.point,
+        zoom: 14,
+        duration: motionDuration(500),
+      });
+    }
     focusedId.current = focusObject.id;
   }, [loaded, focusObject]);
   useEffect(() => {
@@ -873,6 +935,39 @@ export default function FlightMap({
   }, [focusRequest, loaded, styleEpoch]);
   useEffect(() => {
     const m = map.current;
+    if (
+      !m ||
+      !loaded ||
+      !styleReady.current ||
+      !areaFocusRequest ||
+      drawing ||
+      hasFlightScene ||
+      focusedAreaRevision.current === areaFocusRequest.revision
+    )
+      return;
+    m.stop();
+    m.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
+    const location = areaFocusRequest.location;
+    const options = { duration: motionDuration(650), bearing: -10 };
+    if (!location) {
+      m.flyTo({ ...options, center: [120.155, 30.27], zoom: 11.2 });
+    } else if ("bounds" in location) {
+      const camera = m.cameraForBounds(location.bounds, {
+        padding: holder.current
+          ? objectCameraPadding(holder.current)
+          : { top: 48, right: 48, bottom: 48, left: 48 },
+        bearing: -10,
+        maxZoom: 14,
+      });
+      if (!camera) return;
+      m.flyTo({ ...camera, ...options });
+    } else {
+      m.flyTo({ ...options, center: location.point, zoom: 14 });
+    }
+    focusedAreaRevision.current = areaFocusRequest.revision;
+  }, [areaFocusRequest, loaded, styleEpoch, drawing, hasFlightScene]);
+  useEffect(() => {
+    const m = map.current;
     if (!m || !loaded || !styleReady.current) return;
     markers.current.forEach((marker) => marker.remove());
     markers.current = [];
@@ -901,15 +996,23 @@ export default function FlightMap({
       element.title = `${objectName(entity)} · ${kind === "AIRSPACE" ? "查看空域" : kind === "ROUTE" ? "查看航线" : "查看对象"}`;
       element.tabIndex = selectHandler.current ? 0 : -1;
       element.setAttribute("aria-disabled", String(!selectHandler.current));
+      const presentation = resolveDevicePresentation(entity);
+      element.title = `${objectName(entity)} · ${geometry ? (kind === "ROUTE" ? "查看航线" : "查看空域") : presentation.label}`;
       const symbol = document.createElement("span");
       symbol.setAttribute("aria-hidden", "true");
-      symbol.textContent = geometry
+      const iconName = geometry
         ? kind === "ROUTE"
-          ? "↗"
-          : "▱"
-        : ["DOCK", "AIRPORT", "LANDING_SITE", "UAV_AIRPORT"].includes(kind)
-          ? "H"
-          : "◇";
+          ? "ROUTE"
+          : "AIRSPACE"
+        : presentation.category;
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("width", "15");
+      svg.setAttribute("height", "15");
+      const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      use.setAttribute("href", `#${markerPrefix}-${iconName}`);
+      svg.append(use);
+      symbol.append(svg);
       const caption = document.createElement("small");
       caption.textContent = objectName(entity);
       element.append(symbol, caption);
@@ -923,23 +1026,12 @@ export default function FlightMap({
       );
     };
     for (const entity of objects) {
-      const kind = String(
-        entity.kind || entity.type || entity.deviceType || "DEVICE",
-      );
-      if (kind === "AIRSPACE" || kind === "ROUTE") continue;
+      if (entity.kind === "AIRSPACE" || entity.kind === "ROUTE") continue;
+      const presentation = resolveDevicePresentation(entity);
       const point = coordinates(entity);
       if (!point) continue;
-      const site = ["DOCK", "AIRPORT", "LANDING_SITE", "UAV_AIRPORT"].includes(
-        kind,
-      );
-      const detector = ["RADAR", "DETECTOR"].includes(kind);
-      if (
-        (site && layers.sites === false) ||
-        (detector && layers.detectors === false) ||
-        (!site && !detector && layers.devices === false)
-      )
-        continue;
-      addMarker(entity, point, kind);
+      if (layers[presentation.layer] === false) continue;
+      addMarker(entity, point, presentation.rawType || "DEVICE");
     }
     const features: Feature[] = [];
     objects
@@ -1058,6 +1150,7 @@ export default function FlightMap({
     drawing,
     onMapPoint,
     Boolean(onSelect),
+    markerPrefix,
   ]);
   useEffect(() => {
     objectElements.current.forEach((element, id) => {
@@ -1092,6 +1185,24 @@ export default function FlightMap({
     <div
       className={`flight-map ${compact ? "compact" : ""}${drawing ? " flight-map-editing" : ""}`}
     >
+      <svg
+        className="map-icon-definitions"
+        aria-hidden="true"
+        width="0"
+        height="0"
+      >
+        <defs>
+          {Object.entries(markerIcons).map(([name, Icon]) => (
+            <symbol
+              key={name}
+              id={`${markerPrefix}-${name}`}
+              viewBox="0 0 24 24"
+            >
+              <Icon size={24} />
+            </symbol>
+          ))}
+        </defs>
+      </svg>
       <div ref={holder} className="map-canvas" />
       {hasFlightScene && (
         <FlightSimulation3D
@@ -1204,10 +1315,14 @@ export default function FlightMap({
               onClick={fitDrawing}
               aria-pressed={routeView === "overview"}
               className={routeView === "overview" ? "active" : ""}
-              title="查看全部航点范围；近距离看高度请用立体近览"
+              title={
+                drawing.mode === "AIRSPACE"
+                  ? "查看全部边界点范围"
+                  : "查看全部航点范围；近距离看高度请用立体近览"
+              }
             >
               <Scan size={13} />
-              全线总览
+              {drawing.mode === "AIRSPACE" ? "范围总览" : "全线总览"}
             </button>
           </div>
         )}
@@ -1234,15 +1349,17 @@ export default function FlightMap({
           </button>
           <button
             type="button"
-            aria-label="恢复杭州视角"
-            title="恢复杭州全域视角"
+            aria-label={onResetView ? "恢复当前区域视角" : "恢复杭州视角"}
+            title={onResetView ? "恢复当前区域视角" : "恢复杭州全域视角"}
             onClick={() =>
-              map.current?.flyTo({
-                center: [120.155, 30.27],
-                zoom: 11.2,
-                bearing: -10,
-                duration: motionDuration(650),
-              })
+              onResetView
+                ? onResetView()
+                : map.current?.flyTo({
+                    center: [120.155, 30.27],
+                    zoom: 11.2,
+                    bearing: -10,
+                    duration: motionDuration(650),
+                  })
             }
           >
             <Crosshair size={16} />

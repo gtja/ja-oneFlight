@@ -83,6 +83,7 @@ export function History({ path }: { path: string }) {
                           INITIALIZE: "初始化登记",
                           CREATE_FROM_PLAN: "从计划安排任务",
                           SOURCE_IMPORT: "来源档案导入",
+                          FILE_IMPORT: "本地文件导入",
                           UPDATE: "修改记录",
                           SUBMIT: "提交申请",
                           ASSIGN: "分配资源",
@@ -223,13 +224,15 @@ export function Provenance({ record }: { record: Entity }) {
           {
             label: "登记来源",
             value:
-              data.origin === "BUSINESS_INITIALIZATION"
-                ? "平台初始化录入"
-                : data.sourceSystem || data.system
-                  ? String(data.sourceSystem || data.system)
-                  : data.origin === "MANUAL"
-                    ? "人工登记"
-                    : "来源档案导入",
+              data.origin === "FILE_IMPORTED"
+                ? "本地文件导入"
+                : data.origin === "BUSINESS_INITIALIZATION"
+                  ? "平台初始化录入"
+                  : data.sourceSystem || data.system
+                    ? String(data.sourceSystem || data.system)
+                    : data.origin === "MANUAL"
+                      ? "人工登记"
+                      : "来源档案导入",
           },
           {
             label: "来源说明",

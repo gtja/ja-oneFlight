@@ -3,12 +3,13 @@ import { ArrowRight } from "lucide-react";
 import { entityName } from "../../api";
 import { dateTime, metersLabel, secondsLabel } from "../../domain";
 import { getFlightTotals } from "../../flightStatistics";
-import { Status, type DataTable } from "../../components/UI";
+import { airspaceHeightLabel } from "../../geometry";
 import {
-  resourceKinds as kinds,
-  deviceTypeLabels,
-  schedulingLabel,
-} from "./config";
+  resolveDevicePresentation,
+  showsFlightHistory,
+} from "../../devicePresentation";
+import { Status, type DataTable } from "../../components/UI";
+import { resourceKinds as kinds, schedulingLabel } from "./config";
 
 export function resourceColumns(
   kind: string,
@@ -59,24 +60,32 @@ export function resourceColumns(
           {
             key: "type",
             label: "设备类型",
-            render: (r) =>
-              deviceTypeLabels[String(r.type)] || String(r.type || "未知"),
+            render: (r) => resolveDevicePresentation(r).label,
           },
           { key: "sn", label: "序列号" },
           {
             key: "sorties",
             label: "累计飞行架次",
-            render: (r) => getFlightTotals(r)?.sorties ?? "未知",
+            render: (r) =>
+              showsFlightHistory(r)
+                ? (getFlightTotals(r)?.sorties ?? "未知")
+                : "—",
           },
           {
             key: "timeSeconds",
             label: "累计飞行时长",
-            render: (r) => secondsLabel(getFlightTotals(r)?.timeSeconds),
+            render: (r) =>
+              showsFlightHistory(r)
+                ? secondsLabel(getFlightTotals(r)?.timeSeconds)
+                : "—",
           },
           {
             key: "distanceMeters",
             label: "累计飞行距离",
-            render: (r) => metersLabel(getFlightTotals(r)?.distanceMeters),
+            render: (r) =>
+              showsFlightHistory(r)
+                ? metersLabel(getFlightTotals(r)?.distanceMeters)
+                : "—",
           },
           {
             key: "status",
@@ -93,7 +102,7 @@ export function resourceColumns(
             label: "操作",
             render: () => (
               <span className="text-link">
-                统计 / 飞行记录 <ArrowRight size={12} />
+                查看设备详情 <ArrowRight size={12} />
               </span>
             ),
           },
@@ -128,6 +137,19 @@ export function resourceColumns(
             },
             { key: "region", label: "所属区域" },
             { key: "model", label: "型号 / 资质" },
+            ...(kind === "AIRSPACE"
+              ? [
+                  {
+                    key: "airspaceProfile",
+                    label: "高度范围",
+                    render: (r: import("../../api").Entity) =>
+                      airspaceHeightLabel(
+                        (r.metadata as Record<string, unknown> | undefined)
+                          ?.airspaceProfile,
+                      ),
+                  },
+                ]
+              : []),
             {
               key: "status",
               label: kind === "DEVICE" ? "调度状态" : "状态",

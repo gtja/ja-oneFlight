@@ -1,0 +1,170 @@
+.algorithm-page .algorithm-navigation {
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.algorithm-page .algorithm-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex: none;
+}
+.algorithm-page .algorithm-stats > div {
+  padding: 12px 18px;
+}
+.algorithm-page .algorithm-workspace {
+  grid-template-columns: minmax(270px, 32%) minmax(0, 1fr);
+}
+.algorithm-page .algorithm-card {
+  background: #1b2e3c;
+  border-color: #344c5e;
+}
+.algorithm-page .algorithm-card > div:last-child {
+  padding: 13px;
+}
+.algorithm-page .algorithm-card strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.algorithm-page .algorithm-card p {
+  font-size: 11px;
+  line-height: 1.65;
+  max-height: 37px;
+}
+.algorithm-page .algorithm-card small {
+  display: block;
+  line-height: 1.8;
+  color: #a4b9ca;
+}
+.algorithm-page .algorithm-card .algorithm-category {
+  color: #7fa6c7;
+}
+.algorithm-page .algorithm-hero {
+  display: block;
+  min-height: 0;
+  padding-bottom: 16px;
+}
+.algorithm-page .algorithm-hero h2 {
+  overflow-wrap: anywhere;
+}
+.algorithm-page .algorithm-hero .mono {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.algorithm-page .algorithm-detail {
+  padding: 20px;
+  min-width: 0;
+}
+.algorithm-page .algorithm-detail .details {
+  margin: 18px 0;
+}
+.algorithm-page .algorithm-capability-note {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.9;
+}
+.algorithm-capability-note summary {
+  cursor: pointer;
+  color: #a3bdcf;
+}
+.algorithm-page .algorithm-back {
+  display: none;
+}
+.algorithm-page .algorithm-query-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #d9b77b;
+  padding: 10px 16px;
+  margin: 0;
+}
+.algorithm-page .algorithm-list .algorithm-query-note {
+  padding: 0 0 10px;
+}
+.algorithm-page .algorithm-training-tabs {
+  margin: 0 0 18px;
+  align-self: flex-start;
+}
+.algorithm-page .table-toolbar {
+  flex-wrap: wrap;
+}
+.algorithm-page .algorithm-list .list-footer {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.algorithm-page .algorithm-list .list-footer > span {
+  flex-wrap: wrap;
+}
+.algorithm-page .section-title {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+@media (max-width: 900px) {
+  .algorithm-page .algorithm-workspace {
+    display: block;
+    overflow: auto;
+  }
+  .algorithm-page .algorithm-list {
+    border-right: 0;
+    overflow: visible;
+  }
+  .algorithm-page .algorithm-detail {
+    display: none;
+    overflow: visible;
+  }
+  .algorithm-page .detail-open .algorithm-list {
+    display: none;
+  }
+  .algorithm-page .detail-open .algorithm-detail {
+    display: block;
+  }
+  .algorithm-page .algorithm-back {
+    display: inline-flex;
+    margin-bottom: 18px;
+  }
+  .algorithm-page .algorithm-stats > div {
+    padding: 12px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .algorithm-page .algorithm-stats strong {
+    font-size: 16px;
+  }
+  .algorithm-page .algorithm-navigation .tabs {
+    flex-wrap: wrap;
+  }
+  .algorithm-page .algorithm-detail .details {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 500px) {
+  .algorithm-page .algorithm-stats > div {
+    font-size: 10px;
+    padding: 10px 8px;
+  }
+  .algorithm-page .algorithm-stats svg {
+    display: none;
+  }
+  .algorithm-page .algorithm-stats strong {
+    width: 100%;
+    margin-left: 0;
+  }
+  .algorithm-page .algorithm-navigation {
+    padding: 0 8px;
+  }
+  .algorithm-page .algorithm-navigation .tabs button {
+    padding: 12px 8px;
+  }
+  .algorithm-page .algorithm-list,
+  .algorithm-page .algorithm-detail {
+    padding: 12px;
+  }
+  .algorithm-page .table-toolbar {
+    align-items: flex-start;
+  }
+  .algorithm-page .algorithm-training-tabs {
+    flex-wrap: wrap;
+  }
+}

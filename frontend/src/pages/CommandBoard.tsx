@@ -30,6 +30,7 @@ import { entityName, readCatalog, useDevices, type Entity } from "../api";
 import { dateTime, REGIONS } from "../domain";
 import { summarizeFlightTotals } from "../flightStatistics";
 import { deviceObservationStatus } from "../flightDeviceOrder";
+import { resolveDevicePresentation } from "../devicePresentation";
 import {
   commandRecordGroups,
   type CommandRecordKey,
@@ -49,6 +50,7 @@ const layerLabels = {
   sites: "起降点",
   devices: "航空器",
   detectors: "探测设备",
+  equipment: "其他设备",
 };
 const dayFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Shanghai",
@@ -67,28 +69,17 @@ const number = (value: number | null | undefined, digits = 0) =>
     : value.toLocaleString("zh-CN", { maximumFractionDigits: digits });
 const kindOf = (item: Entity) => String(item.type || item.kind || "");
 const objectKindLabel = (item: Entity) =>
-  ({
-    UAV: "航空器",
-    DEVICE: "航空设备",
-    DOCK: "起降点",
-    AIRPORT: "起降点",
-    LANDING_SITE: "起降点",
-    UAV_AIRPORT: "起降点",
-    AIRSPACE: "保障空域",
-    ROUTE: "飞行航线",
-    RADAR: "探测设备",
-    DETECTOR: "探测设备",
-  })[kindOf(item)] || "地图对象";
+  item.kind === "AIRSPACE"
+    ? "保障空域"
+    : item.kind === "ROUTE"
+      ? "飞行航线"
+      : resolveDevicePresentation(item).label;
 const layerOf = (
   item: Entity,
-): "airspace" | "sites" | "devices" | "detectors" =>
-  ["AIRSPACE", "ROUTE"].includes(kindOf(item))
+): "airspace" | "sites" | "devices" | "detectors" | "equipment" =>
+  ["AIRSPACE", "ROUTE"].includes(String(item.kind))
     ? "airspace"
-    : SITE_TYPES.includes(kindOf(item))
-      ? "sites"
-      : DETECTOR_TYPES.includes(kindOf(item))
-        ? "detectors"
-        : "devices";
+    : resolveDevicePresentation(item).layer;
 
 function useBoardCatalog(path: string) {
   const result = useQuery({
@@ -148,6 +139,7 @@ export default function CommandBoard({ navigate }: { navigate: Navigate }) {
     sites: true,
     devices: true,
     detectors: true,
+    equipment: true,
   });
   useEffect(() => {
     if (!refreshResult) return;

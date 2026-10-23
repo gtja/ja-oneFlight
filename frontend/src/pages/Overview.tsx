@@ -17,9 +17,12 @@ import {
 } from "../api";
 import { dateTime, REGIONS, secondsLabel } from "../domain";
 import type { Navigate } from "../navigation";
-import DeviceFlightHistory from "../components/DeviceFlightHistory";
+import DeviceDetails from "../components/DeviceDetails";
 import { summarizeFlightTotals } from "../flightStatistics";
-import FlightMap from "../components/FlightMap";
+import FlightMap, { type AreaFocusRequest } from "../components/FlightMap";
+import { mapObjectsLocation } from "../components/mapObjectFocus";
+import "./Overview.css";
+import "./experience.css";
 import {
   Button,
   Details,
@@ -40,37 +43,62 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
     sites: true,
     devices: true,
     detectors: true,
+    equipment: true,
   });
-  const [selected, setSelected] = useState<Entity | null>(null);
+  const [areaFocus, setAreaFocus] = useState<AreaFocusRequest>();
+  const [areaMessage, setAreaMessage] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [report, setReport] = useState(false);
   const [info, setInfo] = useState(false);
   const dashboard = useData<Entity>("/dashboard", true, 30_000);
   const devices = useDevices();
-  const local = useCatalog("/resources");
+  const local = useCatalog("/resources", {}, true, 30_000);
   const cases = useList("/cases");
   const tasks = useList("/tasks");
-  const objects = useMemo<Entity[]>(
+  const catalogObjects = useMemo<Entity[]>(
+    () => [
+      ...(devices.data?.items || []).map((device) => ({
+        ...device,
+        sourceDeviceId: device.id,
+        region: (local.data?.items || []).find(
+          (resource) => resource.sourceDeviceId === device.id,
+        )?.region,
+      })),
+      ...(local.data?.items || []).filter(
+        (r) =>
+          !r.sourceDeviceId &&
+          ["DEVICE", "ROUTE", "AIRSPACE"].includes(String(r.kind)),
+      ),
+    ],
+    [devices.data, local.data],
+  );
+  const objects = useMemo(
     () =>
-      [
-        ...(devices.data?.items || []).map((device) => ({
-          ...device,
-          sourceDeviceId: device.id,
-          region: (local.data?.items || []).find(
-            (resource) => resource.sourceDeviceId === device.id,
-          )?.region,
-        })),
-        ...(local.data?.items || []).filter(
-          (r) =>
-            !r.sourceDeviceId &&
-            ["DEVICE", "ROUTE", "AIRSPACE"].includes(String(r.kind)),
-        ),
-      ].filter(
+      catalogObjects.filter(
         (r) =>
           (!region || r.region === region) &&
           (!search || entityName(r).includes(search)),
       ),
-    [devices.data, local.data, region, search],
+    [catalogObjects, region, search],
   );
+  const selected =
+    catalogObjects.find(
+      (item) => item.id === selectedId && (!region || item.region === region),
+    ) || null;
+  function focusRegion(nextRegion: string) {
+    const location = nextRegion
+      ? mapObjectsLocation(
+          catalogObjects.filter((item) => item.region === nextRegion),
+        )
+      : null;
+    setAreaMessage(
+      nextRegion && !location ? "该区域暂无可定位对象，已恢复杭州视角" : "",
+    );
+    setAreaFocus((previous) => ({
+      location,
+      revision: (previous?.revision || 0) + 1,
+    }));
+  }
   const currentTasks =
     tasks.data?.items.filter((r) => r.status === "EXECUTING") || [];
   const openCases =
@@ -145,14 +173,18 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
     URL.revokeObjectURL(url);
   }
   return (
-    <div className="page overview-page">
+    <div className="page overview-page experience-page">
       <PageHeader title="态势感知" subtitle="全域运行 · 对象核查与协同处置">
         <Select
           label="指挥区域"
           value={region}
-          onChange={setRegion}
+          onChange={(nextRegion) => {
+            setRegion(nextRegion);
+            setSelectedId(null);
+            focusRegion(nextRegion);
+          }}
           options={[
-            { value: "", label: "全市" },
+            { value: "", label: "全部授权范围" },
             ...REGIONS.map((v) => ({ value: v, label: v })),
           ]}
         />
@@ -172,7 +204,18 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
         </Button>
       </PageHeader>
       <div className="overview-map">
-        <FlightMap objects={objects} onSelect={setSelected} layers={layers} />
+        <FlightMap
+          objects={objects}
+          onSelect={(item) => setSelectedId(item.id)}
+          layers={layers}
+          areaFocusRequest={areaFocus}
+          onResetView={() => focusRegion(region)}
+        />
+        {areaMessage && (
+          <div className="overview-area-message" role="status">
+            {areaMessage}
+          </div>
+        )}
         <div className="map-metrics">
           {metrics.map((m) => (
             <button key={m.label} onClick={() => navigate(m.view)}>
@@ -261,6 +304,7 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
               sites: "起降点",
               devices: "航空器",
               detectors: "探测设备",
+              equipment: "其他设备",
             }).map(([key, label]) => (
               <button
                 className={layers[key as keyof typeof layers] ? "active" : ""}
@@ -288,36 +332,14 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
         </div>
       </div>
       {selected && (
-        <Modal title={entityName(selected)} onClose={() => setSelected(null)}>
+        <Modal title={entityName(selected)} onClose={() => setSelectedId(null)}>
           {selectedDevice ? (
             <>
-              <Details
-                items={[
-                  { label: "设备编号", value: selectedDevice.id },
-                  { label: "序列号", value: String(selectedDevice.sn || "—") },
-                  {
-                    label: "当前状态",
-                    value: <Status status={selectedDevice.status} />,
-                  },
-                  {
-                    label: "末次观测",
-                    value: dateTime(selectedDevice.lastObservedAt),
-                  },
-                  {
-                    label: "经度",
-                    value: String(selectedDevice.longitude ?? "未知"),
-                  },
-                  {
-                    label: "纬度",
-                    value: String(selectedDevice.latitude ?? "未知"),
-                  },
-                ]}
-              />
-              <DeviceFlightHistory device={selectedDevice} />
+              <DeviceDetails device={selectedDevice} />
               <Button
                 primary
                 onClick={() => {
-                  setSelected(null);
+                  setSelectedId(null);
                   navigate("flight", { deviceId: selectedDevice.id });
                 }}
               >

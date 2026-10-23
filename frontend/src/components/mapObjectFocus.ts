@@ -125,3 +125,33 @@ export function mapObjectLocation(entity: Entity): MapObjectLocation | null {
 export function hasMapObjectLocation(entity: Entity): boolean {
   return mapObjectLocation(entity) !== null;
 }
+
+/** Range of observed objects, not an administrative boundary or an authorization filter. */
+export function mapObjectsLocation(
+  entities: readonly Entity[],
+): MapObjectLocation | null {
+  let west = Infinity,
+    south = Infinity,
+    east = -Infinity,
+    north = -Infinity;
+  for (const entity of entities) {
+    const location = mapObjectLocation(entity);
+    if (!location) continue;
+    const points = "point" in location ? [location.point] : location.bounds;
+    for (const [longitude, latitude] of points) {
+      west = Math.min(west, longitude);
+      east = Math.max(east, longitude);
+      south = Math.min(south, latitude);
+      north = Math.max(north, latitude);
+    }
+  }
+  if (!Number.isFinite(west)) return null;
+  return west === east && south === north
+    ? { point: [west, south] }
+    : {
+        bounds: [
+          [west, south],
+          [east, north],
+        ],
+      };
+}

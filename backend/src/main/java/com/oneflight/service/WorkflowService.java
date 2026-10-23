@@ -36,6 +36,7 @@ import com.oneflight.web.Requests.TaskInput;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.MessageDigest;
@@ -67,6 +68,7 @@ public class WorkflowService {
     private final TaskAssignmentPolicy assignmentPolicy;
     private final FlightPlanTaskPolicy planTaskPolicy;
     private final TaskAssignmentOptionsQuery assignmentOptionsQuery;
+    private final AirspacePolicy airspacePolicy;
     private final ObjectMapper json = new ObjectMapper();
 
     public WorkflowService(
@@ -83,7 +85,8 @@ public class WorkflowService {
             AuditService audit,
             TaskAssignmentPolicy assignmentPolicy,
             FlightPlanTaskPolicy planTaskPolicy,
-            TaskAssignmentOptionsQuery assignmentOptionsQuery) {
+            TaskAssignmentOptionsQuery assignmentOptionsQuery,
+            AirspacePolicy airspacePolicy) {
         this.tasks = tasks;
         this.plans = plans;
         this.resources = resources;
@@ -98,40 +101,51 @@ public class WorkflowService {
         this.assignmentPolicy = assignmentPolicy;
         this.planTaskPolicy = planTaskPolicy;
         this.assignmentOptionsQuery = assignmentOptionsQuery;
+        this.airspacePolicy = airspacePolicy;
     }
 
+    // Repository accessors and visibility checks join an existing use-case transaction only.
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public TaskRepository tasks() {
         return tasks;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public FlightPlanRepository plans() {
         return plans;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public ResourceRepository resources() {
         return resources;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public IndustryCaseRepository cases() {
         return cases;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public ConsultationRepository consultations() {
         return consultations;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public OrganizationRepository organizations() {
         return organizations;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public UserAccountRepository users() {
         return users;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public AuditEventRepository events() {
         return events;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public PlatformSettingRepository settings() {
         return settings;
     }
@@ -576,8 +590,13 @@ public class WorkflowService {
         r.sn = in.sn();
         r.longitude = in.longitude();
         r.latitude = in.latitude();
+        Map<String, Object> metadata = in.metadata();
+        if ("AIRSPACE".equals(in.kind())) {
+            metadata = airspacePolicy.preserveGeometry(r.metadata, metadata);
+            airspacePolicy.resource(id == null, r.metadata, metadata);
+        }
         try {
-            r.metadata = json.writeValueAsString(in.metadata() == null ? Map.of() : in.metadata());
+            r.metadata = json.writeValueAsString(metadata == null ? Map.of() : metadata);
         } catch (Exception e) {
             throw ApiException.invalid("扩展字段格式不正确");
         }
@@ -704,6 +723,7 @@ public class WorkflowService {
         return o;
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public boolean visible(BaseRecord record) {
         return scope.canRead(record);
     }

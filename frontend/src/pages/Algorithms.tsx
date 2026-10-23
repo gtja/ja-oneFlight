@@ -1,14 +1,6 @@
-import { useState } from "react";
-import {
-  ArrowRight,
-  Boxes,
-  BrainCircuit,
-  CheckCircle2,
-  Cpu,
-  Database,
-  FlaskConical,
-  Layers3,
-} from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
+import "./experience.css";
+import { ArrowRight, Boxes, BrainCircuit, Cpu } from "lucide-react";
 import {
   entityName,
   queryString,
@@ -33,18 +25,27 @@ import {
   SearchBox,
   Select,
   Status,
-  Unavailable,
+  Tabs,
 } from "../components/UI";
+import { deploymentLabel } from "./algorithms/deploymentStatus";
+import "./algorithms/algorithms.css";
 export default function Algorithms() {
   const user = useUser();
   const [tab, setTab] = useState("catalog");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
-  const categories = useData<{ key: string; name: string; count: number }[]>(
-    "/algorithms/categories",
-  );
+  const categories = useData<
+    { key: string; name: string; count: number | null }[]
+  >("/algorithms/categories", tab === "catalog");
   const [deployed, setDeployed] = useState("");
   const [selected, setSelected] = useState<Entity | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const workspace = useRef<HTMLDivElement>(null);
+  const listScroll = useRef(0);
+  useLayoutEffect(() => {
+    if (workspace.current)
+      workspace.current.scrollTop = detailOpen ? 0 : listScroll.current;
+  }, [detailOpen]);
   const [showDevices, setShowDevices] = useState(false);
   const [taskId, setTaskId] = useState("");
   const [reviewSource, setReviewSource] = useState(
@@ -76,9 +77,9 @@ export default function Algorithms() {
     tab === "catalog",
   );
   const statistics = useData<{
-    all: number;
-    deployed: number;
-    undeployed: number;
+    all: number | null;
+    deployed: number | null;
+    undeployed: number | null;
   }>(
     `/algorithms/statistics?${queryString({ keyword: search, category })}`,
     tab === "catalog",
@@ -92,33 +93,38 @@ export default function Algorithms() {
     {},
     showDevices && !!current,
   );
-  const tasks = useList("/tasks", {}, tab === "review");
+  const tasks = useList(
+    "/tasks",
+    {},
+    tab === "review" && reviewSource === "task",
+  );
   const detections = useList(
     `/tasks/${taskId || "none"}/detections`,
     {},
-    tab === "review" && !!taskId,
+    tab === "review" && reviewSource === "task" && !!taskId,
   );
   return (
-    <div className="page">
+    <div className="page algorithm-page experience-page">
       <PageHeader
         title="飞行算法"
-        subtitle="把识别能力连接到具体任务，让每个结果可复核、可追溯"
+        subtitle="查询算法目录与部署登记，查看识别记录并登记样本准备事项"
       >
-        <Select
-          label="工作内容"
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: "catalog", label: "算法目录" },
-            { value: "review", label: "识别复核" },
-            { value: "training", label: "样本训练" },
-          ]}
-        />
         <small>算法目录与部署状态来自真实来源</small>
       </PageHeader>
+      <nav className="algorithm-navigation" aria-label="算法工作区">
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          items={[
+            { id: "catalog", label: "算法目录" },
+            { id: "review", label: "识别记录" },
+            { id: "training", label: "样本与训练登记" },
+          ]}
+        />
+      </nav>
       {tab === "catalog" ? (
         <>
-          <div className="algorithm-stats">
+          <div className="algorithm-stats" aria-busy={statistics.isLoading}>
             <div>
               <BrainCircuit size={17} />
               <span>可选算法</span>
@@ -134,34 +140,68 @@ export default function Algorithms() {
               <span>未部署算法</span>
               <strong>{statistics.data?.undeployed ?? "—"}</strong>
             </div>
-            <button onClick={() => setTab("review")}>
-              <CheckCircle2 size={16} />
-              进入识别复核 <ArrowRight size={12} />
-            </button>
           </div>
-          <div className="algorithm-workspace">
+          {statistics.isLoading && (
+            <p className="algorithm-query-note" role="status">
+              正在读取算法统计…
+            </p>
+          )}
+          {statistics.error && (
+            <div className="algorithm-query-note" role="alert">
+              统计暂不可用：{statistics.error.message}
+              <Button small onClick={() => void statistics.refetch()}>
+                重试统计
+              </Button>
+            </div>
+          )}
+          <div
+            ref={workspace}
+            className={`algorithm-workspace ${detailOpen ? "detail-open" : ""}`}
+          >
             <aside className="algorithm-list">
               <SearchBox
                 value={search}
-                onChange={setSearch}
+                onChange={(value) => {
+                  setSearch(value);
+                  setDetailOpen(false);
+                }}
                 placeholder="搜索算法名称或能力"
               />
               <Select
                 label="算法分类"
                 value={category}
-                onChange={setCategory}
+                disabled={categories.isLoading}
+                onChange={(value) => {
+                  setCategory(value);
+                  setDetailOpen(false);
+                }}
                 options={[
                   { value: "", label: "全部分类" },
                   ...(categories.data || []).map((c) => ({
                     value: c.key,
                     label: c.name,
                   })),
+                  ...(category &&
+                  !categories.data?.some((item) => item.key === category)
+                    ? [{ value: category, label: category }]
+                    : []),
                 ]}
               />
+              {categories.error && (
+                <p className="algorithm-query-note" role="alert">
+                  分类读取失败
+                  <Button small onClick={() => void categories.refetch()}>
+                    重试分类
+                  </Button>
+                </p>
+              )}
               <Select
                 label="部署筛选"
                 value={deployed}
-                onChange={setDeployed}
+                onChange={(value) => {
+                  setDeployed(value);
+                  setDetailOpen(false);
+                }}
                 options={[
                   { value: "", label: "全部算法" },
                   { value: "true", label: "已部署" },
@@ -172,23 +212,23 @@ export default function Algorithms() {
                 <button
                   className={`algorithm-card ${current?.id === r.id ? "selected" : ""}`}
                   key={r.id}
-                  onClick={() => setSelected(r)}
+                  aria-pressed={current?.id === r.id}
+                  onClick={() => {
+                    listScroll.current = workspace.current?.scrollTop || 0;
+                    setSelected(r);
+                    setDetailOpen(true);
+                  }}
                 >
-                  <div className="algorithm-cover">
-                    <BrainCircuit size={38} />
-                    <span>
-                      {String(
-                        (r.categories as string[] | undefined)?.[0] ||
-                          "算法能力",
-                      )}
-                    </span>
-                  </div>
                   <div>
                     <strong>{entityName(r)}</strong>
                     <p>{String(r.description || "暂无算法说明")}</p>
                     <small>
                       {String(r.version || "版本待核对")} ·{" "}
-                      {r.deployed ? "已部署" : "未部署"}
+                      {deploymentLabel(r.deployed)}
+                    </small>
+                    <small className="algorithm-category">
+                      {(r.categories as string[] | undefined)?.join(" / ") ||
+                        "分类待核对"}
                     </small>
                   </div>
                 </button>
@@ -197,20 +237,50 @@ export default function Algorithms() {
                 <Empty
                   loading={list.isLoading}
                   error={list.error}
-                  title="暂无算法"
-                  description="算法仓配置完成后展示真实目录。"
+                  title={
+                    search || category || deployed
+                      ? "当前筛选下暂无算法"
+                      : "暂无算法"
+                  }
+                  description="算法目录按真实来源展示，可调整筛选条件后重试。"
                 />
               )}
+              {list.error ? (
+                <Button onClick={() => void list.refetch()}>
+                  重新读取目录
+                </Button>
+              ) : !rows.length &&
+                !list.isLoading &&
+                (search || category || deployed) ? (
+                <Button
+                  onClick={() => {
+                    setSearch("");
+                    setCategory("");
+                    setDeployed("");
+                  }}
+                >
+                  清空筛选
+                </Button>
+              ) : null}
               <ListFooter page={list.data} onChange={list.setPage} />
             </aside>
             <main className="algorithm-detail">
-              {current ? (
+              <Button
+                className="algorithm-back"
+                small
+                onClick={() => setDetailOpen(false)}
+              >
+                返回算法目录
+              </Button>
+              {list.isLoading || list.error ? (
+                <Empty
+                  loading={list.isLoading}
+                  error={list.error}
+                  description="正在读取算法目录…"
+                />
+              ) : current ? (
                 <>
                   <div className="algorithm-hero">
-                    <div className="algorithm-visual">
-                      <BrainCircuit size={64} />
-                      <div className="circuit-orbit" />
-                    </div>
                     <div>
                       <small>
                         {String(
@@ -222,9 +292,6 @@ export default function Algorithms() {
                       <h2>{entityName(current)}</h2>
                       <span className="mono">{current.id}</span>
                       <p>{String(current.description || "暂无算法说明")}</p>
-                      <Button disabled title="真实部署写接口尚未接通">
-                        部署算法
-                      </Button>
                     </div>
                   </div>
                   <Details
@@ -247,26 +314,10 @@ export default function Algorithms() {
                       },
                       {
                         label: "部署状态",
-                        value: current.deployed ? "已部署" : "未部署",
+                        value: deploymentLabel(current.deployed),
                       },
                     ]}
                   />
-                  <div className="algorithm-flow">
-                    <span>
-                      <Database size={16} />
-                      模型版本
-                    </span>
-                    <ArrowRight size={14} />
-                    <button onClick={() => setShowDevices(true)}>
-                      <Cpu size={16} />
-                      部署设备
-                    </button>
-                    <ArrowRight size={14} />
-                    <button onClick={() => setTab("review")}>
-                      <CheckCircle2 size={16} />
-                      识别复核
-                    </button>
-                  </div>
                   <section className="section">
                     <div className="section-title">
                       <h3>部署与运行</h3>
@@ -277,20 +328,13 @@ export default function Algorithms() {
                     <p className="muted">
                       来源部署信息独立展示，部署登记状态不代表当前推理运行状态。
                     </p>
-                    <Unavailable
-                      title="部署、停用与训练接口未接通"
-                      description="保留管理入口，实际写操作在来源契约和验证环境确定后启用。"
-                    />
                   </section>
-                  <section className="section">
-                    <h3>运行结果</h3>
-                    <p className="muted">
-                      按任务查看已接通的识别记录，保留原图引用和模型版本。
+                  <details className="algorithm-capability-note">
+                    <summary>能力说明</summary>
+                    <p>
+                      当前可查询来源算法和部署登记；部署、停用及计算训练尚未接通。样本与训练准备事项可在“样本与训练登记”中维护。
                     </p>
-                    <Button onClick={() => setTab("review")}>
-                      查看识别记录 <ArrowRight size={12} />
-                    </Button>
-                  </section>
+                  </details>
                 </>
               ) : (
                 <Empty
@@ -305,7 +349,7 @@ export default function Algorithms() {
         <div className="content-pad">
           <div className="table-toolbar">
             <div>
-              <h2>识别记录与人工复核</h2>
+              <h2>识别记录</h2>
               <p>来源观测与本地关联结果分别查看，识别结论需人工核实</p>
             </div>
             <Select
@@ -332,6 +376,14 @@ export default function Algorithms() {
               />
             )}
           </div>
+          {reviewSource === "task" && tasks.error && (
+            <div className="algorithm-query-note" role="alert">
+              任务读取失败：{tasks.error.message}
+              <Button small onClick={() => void tasks.refetch()}>
+                重试任务
+              </Button>
+            </div>
+          )}
           {reviewSource === "source" ? (
             <SourceRecords kind="events" />
           ) : taskId ? (
@@ -352,7 +404,8 @@ export default function Algorithms() {
           ) : (
             <Empty
               title="选择关联任务"
-              description="接通真实识别结果来源后，可查看并进入人工复核。"
+              loading={tasks.isLoading}
+              description="选择关联任务查看识别记录，来源未接通时会显示具体原因。"
             />
           )}
           <p className="footnote">
@@ -363,7 +416,7 @@ export default function Algorithms() {
         <div className="content-pad">
           <div className="table-toolbar">
             <div>
-              <h2>样本与训练</h2>
+              <h2>样本与训练登记</h2>
               <p>样本收集、标注准备与训练事项统一登记</p>
             </div>
             {manage && (
@@ -373,29 +426,25 @@ export default function Algorithms() {
               </Button>
             )}
           </div>
-          <div className="training-grid">
-            <section className="panel section">
-              <Database size={30} />
-              <h3>样本管理</h3>
-              <p className="muted">收集来源观测，逐条核对标注</p>
-              <Button onClick={() => setTrainingKind("ALGORITHM_DATASET")}>
-                查看样本集合
-              </Button>
-            </section>
-            <section className="panel section">
-              <FlaskConical size={30} />
-              <h3>训练任务</h3>
-              <p className="muted">登记训练目标、数据准备及待接入事项</p>
-              <Button onClick={() => setTrainingKind("ALGORITHM_TRAINING")}>
-                查看训练事项
-              </Button>
-            </section>
-            <section className="panel section">
-              <Layers3 size={30} />
-              <h3>模型版本</h3>
-              <p className="muted">来源算法目录中的真实模型版本</p>
-              <Button onClick={() => setTab("catalog")}>查看模型版本</Button>
-            </section>
+          <div
+            className="segmented algorithm-training-tabs"
+            role="group"
+            aria-label="登记类型"
+          >
+            <button
+              className={trainingKind === "ALGORITHM_DATASET" ? "active" : ""}
+              aria-pressed={trainingKind === "ALGORITHM_DATASET"}
+              onClick={() => setTrainingKind("ALGORITHM_DATASET")}
+            >
+              样本集合
+            </button>
+            <button
+              className={trainingKind === "ALGORITHM_TRAINING" ? "active" : ""}
+              aria-pressed={trainingKind === "ALGORITHM_TRAINING"}
+              onClick={() => setTrainingKind("ALGORITHM_TRAINING")}
+            >
+              训练事项
+            </button>
           </div>
           <section className="section">
             <h3>
@@ -431,10 +480,9 @@ export default function Algorithms() {
             />
             <ListFooter page={work.data} onChange={work.setPage} />
           </section>
-          <Unavailable
-            title="训练计算服务待接入"
-            description="可登记样本与训练准备事项；接通计算服务后启用提交训练、评测及模型发布。"
-          />
+          <p className="footnote">
+            此处登记样本与训练准备事项，不执行计算训练、评测或模型发布。
+          </p>
         </div>
       )}
       {workSelected && (
@@ -474,9 +522,7 @@ export default function Algorithms() {
           />
           <Provenance record={workSelected} />
           {workSelected.kind === "ALGORITHM_TRAINING" && (
-            <Button disabled title="训练计算服务未接通">
-              提交训练
-            </Button>
+            <p className="footnote">此记录为训练准备事项，尚未提交计算训练。</p>
           )}
         </Modal>
       )}

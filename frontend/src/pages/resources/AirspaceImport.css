@@ -1,0 +1,185 @@
+.modal.airspace-import-modal {
+  width: min(1260px, calc(100vw - 32px));
+  max-width: none;
+}
+.airspace-import {
+  color: #bdcedb;
+}
+.airspace-import-steps {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0 0 18px;
+  padding: 0;
+  color: #91a9bb;
+  font-size: 13px;
+}
+.airspace-import-steps .active {
+  color: #b8dcff;
+  font-weight: 600;
+}
+.airspace-import-options {
+  margin: 16px 0;
+  border: 1px solid #354d61;
+  border-radius: 8px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.airspace-import-options > label {
+  font-size: 12px;
+}
+.airspace-import-options .airspace-import-file {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+}
+.airspace-import-file input {
+  max-width: 100%;
+  color: #d0e1ee;
+}
+.airspace-import-file small,
+.airspace-import-preview .footnote {
+  color: #97adbd;
+}
+.airspace-import-options > details,
+.airspace-import-options > .airspace-import-example,
+.airspace-import-options .airspace-import-coordinate {
+  grid-column: 1 / -1;
+}
+.airspace-import-example {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #9bcaff;
+  font-size: 12px;
+  width: fit-content;
+}
+.airspace-import-coordinate {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  line-height: 1.7;
+}
+.airspace-import-options > details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #b2ccdf;
+}
+.airspace-import-options > details .airspace-profile {
+  margin-top: 12px;
+  max-width: 650px;
+}
+.airspace-import-options > .button {
+  justify-self: start;
+  grid-column: 1 / -1;
+}
+.airspace-import-summary {
+  padding: 12px 14px;
+  background: #20384a;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.airspace-import-review {
+  display: grid;
+  grid-template-columns: minmax(220px, 330px) minmax(0, 1fr);
+  min-height: 360px;
+  gap: 14px;
+}
+.airspace-import-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 420px;
+  overflow: auto;
+}
+.airspace-import-rows > li {
+  margin: 0 0 8px;
+  border: 1px solid #334e64;
+  border-radius: 6px;
+  padding: 12px;
+}
+.airspace-import-rows > li.selected {
+  background: #213e53;
+  border-color: #7ba5cc;
+}
+.airspace-import-rows button {
+  display: grid;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: #cfdfeb;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+.airspace-import-rows button > strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.airspace-import-rows button > span,
+.airspace-import-rows small {
+  font-size: 11px;
+  color: #9cb7ca;
+  line-height: 1.8;
+}
+.airspace-import-rows small {
+  display: block;
+  margin-top: 8px;
+}
+.airspace-import-warning {
+  font-size: 11px;
+  color: #d6c38d;
+  margin-bottom: 0;
+  line-height: 1.7;
+}
+.airspace-import-map {
+  position: relative;
+  min-height: 360px;
+  border: 1px solid #375066;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.airspace-import-map > .flight-map {
+  height: 100%;
+  min-height: 360px;
+}
+.airspace-import-map > p {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #426478;
+  border-radius: 5px;
+  background: #132733ed;
+  color: #cce0ef;
+  font-size: 11px;
+  pointer-events: none;
+}
+.airspace-import :where(button, a, input):focus-visible {
+  outline: 2px solid #86bfff;
+  outline-offset: 3px;
+}
+@media (max-width: 720px) {
+  .airspace-import-options,
+  .airspace-import-review {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .airspace-import-rows {
+    max-height: 230px;
+  }
+  .airspace-import-options {
+    padding: 12px;
+  }
+  .airspace-import-map {
+    min-height: 320px;
+  }
+}

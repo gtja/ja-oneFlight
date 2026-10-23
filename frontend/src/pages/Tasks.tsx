@@ -1,8 +1,11 @@
 import type { Navigate } from "../navigation";
+import "./experience.css";
 import { taskNextStep } from "../taskWorkflow";
 import { flightPlanCompatibility } from "../flightPlanLink";
 import SourceRecords from "../components/SourceRecords";
 import TaskAssignmentModal from "../components/TaskAssignmentModal";
+import RequestAssistant from "./tasks/RequestAssistant";
+import TaskRequestForm from "./tasks/TaskRequestForm";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -110,8 +113,8 @@ export default function Tasks({
     taskId ? { id: taskId } : null,
   );
   const [showCreate, setShowCreate] = useState(false);
+  const creationBusy = useRef(false);
   const [editing, setEditing] = useState(false);
-  const [templateScene, setTemplateScene] = useState(SCENES[0]);
   const [assistant, setAssistant] = useState(false);
   const [action, setAction] = useState("");
   const query = useList("/tasks", { status: filter, keyword: search, planId });
@@ -259,12 +262,12 @@ export default function Tasks({
     }
   }
   return (
-    <div className="page">
+    <div className="page task-page experience-page">
       <PageHeader
         title="任务调度"
         subtitle="提交需求、分配资源、执行与验收，在一张任务单内办理"
       >
-        {!planId && (
+        {create && !planId && (
           <Button onClick={() => setAssistant(true)}>
             <WandSparkles size={14} />
             需求助手
@@ -565,22 +568,21 @@ export default function Tasks({
         </>
       )}
       {showCreate && (
-        <Modal title="提报飞行需求" onClose={() => setShowCreate(false)}>
-          <EntityForm
+        <Modal
+          title="提报飞行需求"
+          onClose={() => {
+            if (!creationBusy.current) setShowCreate(false);
+          }}
+        >
+          <TaskRequestForm
             fields={createFields}
-            initial={{
-              priority: "NORMAL",
-              scene: templateScene,
-              organizationId: user.organizationId,
+            organizationId={user.organizationId}
+            onClose={() => {
+              if (!creationBusy.current) setShowCreate(false);
             }}
-            submitLabel="提交需求"
-            onCancel={() => setShowCreate(false)}
-            onSubmit={(body) =>
-              mutate(async () => {
-                const task = await write("/tasks", body);
-                return write(`/tasks/${task.id}/actions`, { action: "SUBMIT" });
-              }, "需求已提交")
-            }
+            onBusyChange={(busy) => {
+              creationBusy.current = busy;
+            }}
           />
         </Modal>
       )}
@@ -600,28 +602,12 @@ export default function Tasks({
           />
         </Modal>
       )}
-      {assistant && (
-        <Modal title="需求助手 · 模板引导" onClose={() => setAssistant(false)}>
-          <p className="muted">
-            选择场景，系统将引导填写区域、时间和作业要求。
-          </p>
-          <div className="template-grid">
-            {SCENES.map((s) => (
-              <button
-                key={s}
-                onClick={() => {
-                  setTemplateScene(s);
-                  setAssistant(false);
-                  setShowCreate(true);
-                }}
-              >
-                <WandSparkles size={20} />
-                <strong>{s}</strong>
-                <small>创建飞行需求</small>
-              </button>
-            ))}
-          </div>
-        </Modal>
+      {assistant && create && (
+        <RequestAssistant
+          organizations={organizations.data?.items || []}
+          organizationsError={organizations.error}
+          onClose={() => setAssistant(false)}
+        />
       )}
       {selected && detail.error && (
         <Modal title="任务暂不可查看" onClose={() => setSelected(null)}>

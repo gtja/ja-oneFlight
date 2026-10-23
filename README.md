@@ -26,9 +26,11 @@ React + TypeScript 前端、Java 21 + Spring Boot 后端，按杭州一网统飞
 ./scripts/dev.sh --container-api
 ```
 
-前端地址 <http://localhost:5173>，后端 <http://localhost:8080>。默认开发模式与 `--mysql` 均直接使用 `.env` 的 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`，不会创建 MySQL 容器或改成 localhost。缺少数据库配置会拒绝启动；`--h2` 已禁用，H2 仅保留在自动化测试配置中。Ctrl-C 结束开发服务，不影响远端业务数据。
+默认开发模式与 `--mysql` 均以根目录私有 `.env` 为配置输入，与单镜像打包共用业务库、来源、4A 及飞控接入设置。`ONEFLIGHT_TRANSPORT_MODE=http-ip` 时，本机统一入口为 <http://127.0.0.1:8088>（端口取 `WEB_PORT`），API 仍在 8080；4A 回调、允许来源及本地飞控地址随本机入口一起生成，不修改远端数据库或来源连接。请从脚本输出的统一入口开始登录，避免混用 `localhost` 和 `127.0.0.1`。普通未启用 HTTP IP 的开发模式保留 5173；HTTPS 部署继续使用已配置的 HTTPS 入口和反向代理。
 
-已有 Docker 后端运行时，使用 `--container-api` 只调试前端；原生 Java 模式会检查同项目 Docker 后端，避免重复启动。`.local/source.env` 仅允许覆盖 `SOURCE_` 来源配置，业务数据库始终以 `.env` 为准。原生附件默认使用 `backend/uploads`，也可在 `.env` 指定 `UPLOAD_DIRECTORY`；连接同一业务库前须确认对应附件已恢复。需与本机 Compose 共享附件目录时，仍可使用 `./scripts/up.sh --shared-uploads`，保持既有附件合并规则。
+缺少数据库配置会拒绝启动，不会创建 MySQL 容器或将数据库连接改为 localhost；`--h2` 已禁用，H2 仅保留在自动化测试配置中。Ctrl-C 结束开发服务。正常后端启动仍会执行待应用的 Flyway 迁移；前端调试不应重复启动已有后端。
+
+`--container-api` 适用于已有 Docker 后端的普通前端调试；4A 或嵌入飞控应使用匹配固定入口的运行方式。原生 Java 模式会检查同项目 Docker 后端，避免重复启动。原生开发不再读取 `.local/source.env` 或历史预览配置；需修改来源时在根 `.env` 维护，保证与打包输入一致。原生附件默认使用 `backend/uploads`，也可在 `.env` 指定 `UPLOAD_DIRECTORY`；连接同一业务库前须确认对应附件已恢复。HTTP IP 的嵌入飞控需保持本机 8089 代理运行，`.env` 的网关密钥须与代理配对，开发脚本不会启动或替换既有代理。需与本机 Compose 共享附件目录时，仍可使用 `./scripts/up.sh --shared-uploads`，保持既有附件合并规则。
 
 ## 功能与真实数据
 

@@ -1,0 +1,68 @@
+.overview-page .overview-area-message {
+  position: absolute;
+  top: 134px;
+  left: 16px;
+  max-width: calc(100% - 32px);
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #172c39f2;
+  color: #c8dce8;
+  font-size: 12px;
+  pointer-events: none;
+}
+.overview-page .map-legend > div {
+  flex-wrap: wrap;
+}
+.overview-page .map-legend button:focus-visible {
+  outline: 2px solid #9bd9ef;
+  outline-offset: 3px;
+}
+@media (max-width: 700px) {
+  .overview-page .overview-map {
+    overflow: auto;
+  }
+  .overview-page .overview-map > .flight-map {
+    position: relative;
+    height: 460px;
+  }
+  .overview-page .map-metrics,
+  .overview-page .map-sidebar,
+  .overview-page .map-legend {
+    position: relative;
+    inset: auto;
+    width: auto;
+    margin: 12px;
+    overflow: visible;
+  }
+  .overview-page .map-search {
+    top: 12px !important;
+    left: 10px;
+    right: 10px;
+  }
+  .overview-page .map-search .search-box {
+    min-width: 0;
+    width: 100%;
+  }
+  .overview-page .map-tools {
+    top: 62px !important;
+    right: 10px;
+  }
+  .overview-page .map-metrics button {
+    padding: 10px 8px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .overview-page .map-metrics strong {
+    width: 100%;
+  }
+  .overview-page .header-actions {
+    flex-wrap: wrap;
+  }
+  .overview-page .map-legend {
+    max-width: calc(100% - 24px);
+  }
+  .overview-page .map-legend > div {
+    gap: 4px;
+  }
+}

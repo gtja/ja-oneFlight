@@ -14,9 +14,22 @@
   height: 100%;
   min-height: 0;
 }
+.spatial-resource-modal .modal-body > div,
+.spatial-resource-modal .modal-body > div > fieldset {
+  display: flex;
+  flex-direction: column;
+}
+.spatial-resource-modal .modal-body > div > fieldset {
+  flex: 1;
+  min-height: 0;
+}
 .spatial-resource-form {
   display: flex;
   flex-direction: column;
+}
+.spatial-resource-modal .spatial-resource-form {
+  flex: 1;
+  overflow: hidden;
 }
 .spatial-resource-form > .form-grid {
   flex: 1;
@@ -50,6 +63,100 @@
   border-color: #38566b;
   border-radius: 8px;
   background: #142530;
+}
+.airspace-profile {
+  margin: 0;
+  padding: 14px 12px;
+  border: 0;
+  border-bottom: 1px solid #354e60;
+  background: #173137;
+  min-width: 0;
+}
+.airspace-profile > legend {
+  float: left;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #bceadd;
+  margin-bottom: 12px;
+}
+.airspace-profile > label {
+  display: block;
+  clear: both;
+  font-size: 11px;
+  color: #aec9c2;
+  margin: 8px 0;
+}
+.airspace-height-limits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 12px;
+}
+.airspace-height-limits label {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  font-size: 10px;
+  color: #aec9c2;
+}
+.airspace-height-limits input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #446c69;
+  border-radius: 4px;
+  background: #112930;
+  color: #c8ede4;
+}
+.airspace-profile > small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.8;
+  color: #9dbbb2;
+  margin-top: 10px;
+}
+.airspace-profile :where(input, button):focus-visible {
+  outline: 2px solid #7eb9f2;
+  outline-offset: 2px;
+}
+.airspace-height-summary {
+  margin: 0;
+  padding: 10px 12px;
+  color: #b2cdd0;
+  font-size: 11px;
+  line-height: 1.8;
+  border-bottom: 1px solid #354e60;
+}
+.airspace-shape-fields {
+  display: grid;
+  gap: 12px;
+  padding: 14px 12px;
+  border-bottom: 1px solid #354e60;
+  color: #c8e3ed;
+}
+.airspace-shape-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+}
+.airspace-shape-fields input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #446c69;
+  border-radius: 4px;
+  background: #112930;
+  color: #c8ede4;
+}
+.airspace-shape-fields small {
+  font-size: 10px;
+  line-height: 1.8;
+  color: #9dbbb2;
+}
+.geometry-legend span.boundary {
+  background: #8cd4ee;
 }
 .geometry-workspace {
   height: 100%;
@@ -692,17 +799,24 @@
     height: calc(100dvh - 24px);
   }
   .spatial-resource-modal > .modal-body {
-    overflow: auto;
+    overflow: hidden;
     padding: 12px;
   }
-  .spatial-resource-modal .modal-body > div,
   .spatial-resource-form {
     height: auto;
+  }
+  .spatial-resource-modal .modal-body > div,
+  .spatial-resource-modal .spatial-resource-form {
+    height: 100%;
   }
   .spatial-resource-form > .form-grid {
     overflow: visible;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: none;
+  }
+  .spatial-resource-modal .spatial-resource-form > .form-grid {
+    overflow: auto;
+    align-content: start;
   }
   .spatial-resource-form > .form-grid > .field:not(.spatial-field) {
     grid-column: auto;
@@ -726,13 +840,16 @@
   .geometry-editor-body,
   .geometry-fullscreen-modal .geometry-editor-body {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 380px max-content;
+    align-content: start;
     overflow: auto;
   }
   .geometry-stage {
     min-height: 380px;
   }
   .geometry-sidebar {
-    max-height: 280px;
+    max-height: none;
+    overflow: visible;
     border-left: 0;
     border-top: 1px solid #354e60;
   }

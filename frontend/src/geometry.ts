@@ -1,4 +1,39 @@
+import { sanitizeAirspaceShape, type AirspaceShape } from "./airspaceShapes";
+
 export type GeometryPosition = [number, number, ...number[]];
+
+/** Airspace limits have their own datum and never derive from source Z. */
+export function airspaceProfileError(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) return "空域高度格式无效";
+  const profile = raw as Record<string, unknown>;
+  const {
+    reference,
+    lowerHeightMeters: lower,
+    upperHeightMeters: upper,
+  } = profile;
+  if (reference != null && reference !== "AGL" && reference !== "AMSL")
+    return "请选择有效的空域高度基准";
+  for (const value of [lower, upper]) {
+    if (value != null && (typeof value !== "number" || !Number.isFinite(value)))
+      return "空域高度须为有限数值";
+    if (reference === "AGL" && typeof value === "number" && value < 0)
+      return "离地高度不能为负数";
+  }
+  if ((lower != null || upper != null) && !reference)
+    return "填写空域高度时请选择离地或海拔基准";
+  if (typeof lower === "number" && typeof upper === "number" && lower > upper)
+    return "空域高度下限不能大于上限";
+  return null;
+}
+
+export function airspaceHeightLabel(raw: unknown): string {
+  if (raw == null || airspaceProfileError(raw)) return "未明确";
+  const profile = raw as Record<string, unknown>;
+  if (profile.lowerHeightMeters == null && profile.upperHeightMeters == null)
+    return "未明确";
+  return `${profile.reference === "AGL" ? "离地" : "海拔"} ${profile.lowerHeightMeters ?? "未明确"} ～ ${profile.upperHeightMeters ?? "未明确"} 米`;
+}
 export type GeometryMode = "ROUTE" | "AIRSPACE";
 export type DrawGeometry =
   | { type: "LineString"; coordinates: number[][] }
@@ -27,6 +62,7 @@ export interface GeometryContext {
   version: 1;
   buildings: GeometryBuildingAssociation[];
   flightProfile?: RouteFlightProfile;
+  airspaceShape?: AirspaceShape;
 }
 
 export function isRouteHeightMeters(value: unknown): value is number {
@@ -150,6 +186,15 @@ function parsedGeometry(raw: unknown): DrawGeometry | null {
   } catch {
     return null;
   }
+}
+
+export function geometryInnerRings(raw: unknown): [number, number][][] {
+  const geometry = parsedGeometry(raw);
+  if (geometry?.type !== "Polygon") return [];
+  return geometry.coordinates
+    .slice(1)
+    .filter((ring) => Array.isArray(ring) && ring.every(validPosition))
+    .map((ring) => ring.map((point): [number, number] => [point[0], point[1]]));
 }
 
 function validPosition(point: unknown): point is GeometryPosition {
@@ -283,6 +328,11 @@ export function sanitizeGeometryContext(
   context: unknown,
   pointCount: number,
 ): GeometryContext {
+  const airspaceShape = sanitizeAirspaceShape(
+    context && typeof context === "object"
+      ? (context as { airspaceShape?: unknown }).airspaceShape
+      : undefined,
+  );
   const profile = routeProfile(
     context && typeof context === "object"
       ? (context as { flightProfile?: unknown }).flightProfile
@@ -342,6 +392,7 @@ export function sanitizeGeometryContext(
   return {
     version: 1,
     buildings,
+    ...(airspaceShape ? { airspaceShape } : {}),
     ...(profile
       ? {
           flightProfile: {

@@ -79,6 +79,18 @@ afterEach(() => {
 });
 
 describe("任务日历的上海日期与源顺序", () => {
+  it("需求助手只向可提报角色显示", () => {
+    start();
+    expect(screen.getByRole("button", { name: "需求助手" })).toBeTruthy();
+    cleanup();
+    render(
+      <UserContext.Provider value={{ ...user, role: "PILOT" }}>
+        <Tasks navigate={vi.fn()} />
+      </UserContext.Provider>,
+    );
+    expect(screen.queryByRole("button", { name: "需求助手" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "提报需求" })).toBeNull();
+  });
   it("按上海跨日分组，保持同日源顺序，隐藏未排期及七天范围之外的任务", () => {
     fixtures.tasks = [
       task("今天第一条", "2026-10-22T15:00:00Z"),

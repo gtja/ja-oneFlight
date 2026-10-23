@@ -2,6 +2,7 @@ import { useState } from "react";
 import { entityName, useList, type Entity } from "../api";
 import { dateTime } from "../domain";
 import { DataTable, Details, ListFooter, Modal, SearchBox, Select } from "./UI";
+import SourceRoutePreview from "./SourceRoutePreview";
 
 const fieldNames: Record<string, string> = {
   title: "名称",
@@ -34,6 +35,11 @@ const fieldNames: Record<string, string> = {
   sourceTimeWarning: "时间说明",
   mediaType: "文件类型",
   sourceUrl: "原件引用",
+  templateId: "来源模板编号",
+  sourceVersion: "来源版本",
+  speedMetersPerSecond: "来源速度（米/秒）",
+  heightMeters: "来源高度（米，基准未说明）",
+  returnHeightMeters: "来源返航高度（米，基准未说明）",
 };
 const resourceNotes: Record<string, string> = {
   people:
@@ -59,7 +65,13 @@ function associatedDevices(row: Entity) {
   );
 }
 
-export default function SourceRecords({ kind }: { kind: string }) {
+export default function SourceRecords({
+  kind,
+  onOpenLocalArchive,
+}: {
+  kind: string;
+  onOpenLocalArchive?: (record: Entity) => void;
+}) {
   const [search, setSearch] = useState("");
   const [eventType, setEventType] = useState("");
   const list = useList(`/source-data/${kind}`, {
@@ -156,7 +168,22 @@ export default function SourceRecords({ kind }: { kind: string }) {
           title={entityName(selected)}
           onClose={() => setSelected(null)}
           wide
+          className={kind === "routes" ? "source-route-modal" : ""}
         >
+          {kind === "routes" && (
+            <SourceRoutePreview
+              key={selected.id}
+              record={selected}
+              onOpenLocalArchive={
+                onOpenLocalArchive
+                  ? (record) => {
+                      setSelected(null);
+                      onOpenLocalArchive(record);
+                    }
+                  : undefined
+              }
+            />
+          )}
           <Details
             items={Object.entries(selected)
               .filter(

@@ -1,0 +1,168 @@
+.modal.source-route-modal {
+  width: min(1180px, calc(100vw - 32px));
+  max-width: none;
+}
+.source-route-preview {
+  border: 1px solid #355166;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+  color: #c3d6e3;
+}
+.source-route-preview-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.source-route-preview-heading h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.source-route-preview-heading > span {
+  color: #a4bed0;
+  font-size: 12px;
+}
+.source-route-message {
+  color: #a9c5d7;
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 13px 0;
+}
+.source-route-map {
+  position: relative;
+  height: 330px;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid #3c5b6b;
+}
+.source-route-diagram {
+  background: #142b36;
+  border: 1px solid #375166;
+  border-radius: 6px;
+  overflow: hidden;
+  text-align: center;
+}
+.source-route-diagram svg {
+  display: block;
+  width: 100%;
+  height: 280px;
+  color: #67d2c1;
+}
+.source-route-diagram svg circle {
+  fill: #c5f0e5;
+  stroke: #142b36;
+  stroke-width: 2px;
+}
+.source-route-diagram svg text {
+  fill: #d2e7f0;
+  font-size: 12px;
+}
+.source-route-diagram > small {
+  display: block;
+  margin: 0 12px 12px;
+  font-size: 11px;
+  color: #9db9ca;
+}
+.source-route-point-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-top: 14px;
+  border: 1px solid #354d61;
+  border-radius: 6px;
+}
+.source-route-point-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.source-route-point-table th,
+.source-route-point-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #304658;
+}
+.source-route-point-table thead {
+  background: #1d3547;
+  color: #c3dce9;
+}
+.source-route-point-table tbody th {
+  font-weight: 400;
+  color: #a5c8dd;
+}
+.source-route-point-table tbody td {
+  font-variant-numeric: tabular-nums;
+}
+.source-route-point-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.source-route-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 11px;
+  color: #9eb8c9;
+}
+.source-route-pagination > span {
+  margin-right: auto;
+}
+.source-route-edit-guide {
+  background: #203b4d;
+  border-left: 3px solid #6fadd7;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.9;
+  margin: 16px 0 10px;
+}
+.source-route-height-note {
+  font-size: 11px;
+  line-height: 1.8;
+  color: #a9b8c8;
+  margin: 10px 0;
+}
+.source-route-raw > summary {
+  cursor: pointer;
+  width: fit-content;
+  color: #96bedb;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.source-route-raw > div {
+  margin-top: 12px;
+}
+.source-route-raw strong {
+  font-size: 11px;
+  color: #a8c1d2;
+}
+.source-route-raw pre {
+  max-height: 240px;
+  overflow: auto;
+  padding: 12px;
+  background: #11242f;
+  color: #aec6d6;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.source-route-preview :where(button, summary):focus-visible {
+  outline: 2px solid #8fbeed;
+  outline-offset: 3px;
+}
+@media (max-width: 680px) {
+  .source-route-preview {
+    padding: 12px;
+  }
+  .source-route-map {
+    height: 300px;
+  }
+  .source-route-diagram svg {
+    height: 220px;
+  }
+  .source-route-pagination > span {
+    width: 100%;
+  }
+}

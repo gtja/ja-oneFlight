@@ -1,4 +1,5 @@
 import { useState } from "react";
+import "./experience.css";
 import type { Navigate } from "../navigation";
 import {
   ArrowRight,
@@ -7,6 +8,7 @@ import {
   FileText,
   Plus,
   Radio,
+  Upload,
   Users,
   Wrench,
 } from "lucide-react";
@@ -22,7 +24,10 @@ import { dateTime, metersLabel, REGIONS, secondsLabel } from "../domain";
 import { useUser } from "../context";
 import { Provenance, useMutationFeedback } from "../components/Workflow";
 import SourceRecords from "../components/SourceRecords";
-import DeviceFlightHistory from "../components/DeviceFlightHistory";
+import DeviceDetails from "../components/DeviceDetails";
+import FlightMap from "../components/FlightMap";
+import AirspaceImport from "./resources/AirspaceImport";
+import { airspaceHeightLabel } from "../geometry";
 import { summarizeFlightTotals } from "../flightStatistics";
 import {
   resourceKinds as kinds,
@@ -58,6 +63,7 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Entity | null>(null);
   const [form, setForm] = useState<Entity | boolean | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const sourceCatalogKind = manage && remote ? sourceCatalogs[kind] : undefined;
   const local = useList(
     "/resources",
@@ -76,7 +82,7 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
     kind === "DEVICE" && remote,
   );
   const catalog = useDevices(
-    kind === "DEVICE" || kind === "FLIGHT" || kind === "MAINTENANCE" || !!form,
+    kind === "DEVICE" || kind === "FLIGHT" || kind === "MAINTENANCE",
   );
   const dispatchCatalog = useCatalog(
     "/resources",
@@ -127,7 +133,11 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
     kind === "FLIGHT",
   );
   const files = useList("/attachments", {}, kind === "MEDIA");
-  const organizations = useList("/organizations");
+  const organizations = useCatalog(
+    "/organizations",
+    {},
+    manage && (!!form || importOpen),
+  );
   const mutate = useMutationFeedback();
   const query =
     kind === "FLIGHT"
@@ -156,7 +166,7 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
     form,
   });
   return (
-    <div className="page">
+    <div className="page resources-page experience-page">
       <PageHeader title="资源管理" subtitle="设备、人员与数据档案统一管理" />
       <div className="resource-layout">
         <aside className="resource-catalog">
@@ -275,6 +285,12 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
                   登记资源
                 </Button>
               )}
+            {manage && kind === "AIRSPACE" && !sourceCatalogKind && (
+              <Button onClick={() => setImportOpen(true)}>
+                <Upload size={14} />
+                批量导入
+              </Button>
+            )}
           </div>
           {kind === "DEVICE" && (
             <>
@@ -397,7 +413,19 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
             </div>
           )}
           {sourceCatalogKind ? (
-            <SourceRecords key={sourceCatalogKind} kind={sourceCatalogKind} />
+            <SourceRecords
+              key={sourceCatalogKind}
+              kind={sourceCatalogKind}
+              onOpenLocalArchive={
+                kind === "ROUTE"
+                  ? (record) => {
+                      setRemote(false);
+                      setSearch(entityName(record));
+                      setSelected(null);
+                    }
+                  : undefined
+              }
+            />
           ) : kind === "MEDIA" && sourceMedia ? (
             <SourceRecords kind="media" />
           ) : (
@@ -454,84 +482,109 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
           onClose={() => setForm(null)}
         >
           <div data-resource-id={typeof form === "object" ? form.id : ""}>
-            <EntityForm
-              fields={fields}
-              notice={
-                kind === "DEVICE"
-                  ? "业务所属组织用于本平台任务分配，设备与任务须属于同一组织。"
-                  : undefined
-              }
-              initial={
-                typeof form === "object"
-                  ? {
-                      ...form,
-                      ...(form.metadata as object),
-                      id: form.id,
-                      title: form.title,
-                      organizationId: form.organizationId,
-                      region: form.region,
-                      status: form.status,
-                      sourceDeviceId: form.sourceDeviceId,
-                      ...(kind === "DEVICE" &&
-                      !REGIONS.includes(String(form.region))
-                        ? { region: "" }
+            {organizations.isLoading && <p role="status">正在读取业务组织…</p>}
+            {organizations.error && (
+              <p className="form-error" role="alert">
+                业务组织读取失败：{organizations.error.message}
+                <Button small onClick={() => void organizations.refetch()}>
+                  重试组织目录
+                </Button>
+              </p>
+            )}
+            <fieldset
+              disabled={!organizations.data}
+              style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+            >
+              <EntityForm
+                fields={fields}
+                notice={
+                  kind === "DEVICE"
+                    ? "业务所属组织用于本平台任务分配，设备与任务须属于同一组织。"
+                    : undefined
+                }
+                initial={
+                  typeof form === "object"
+                    ? {
+                        ...form,
+                        ...(form.metadata as object),
+                        id: form.id,
+                        title: form.title,
+                        organizationId: form.organizationId,
+                        region: form.region,
+                        status: form.status,
+                        sourceDeviceId: form.sourceDeviceId,
+                        ...(kind === "DEVICE" &&
+                        !REGIONS.includes(String(form.region))
+                          ? { region: "" }
+                          : {}),
+                        geometry: (
+                          form.metadata as Record<string, unknown> | undefined
+                        )?.geometry
+                          ? JSON.stringify(
+                              (form.metadata as Record<string, unknown>)
+                                .geometry,
+                            )
+                          : "",
+                      }
+                    : { status: "ACTIVE", organizationId: user.organizationId }
+                }
+                onCancel={() => setForm(null)}
+                onSubmit={(body) => {
+                  const data: Record<string, unknown> = {
+                    ...body,
+                    kind,
+                    metadata: {
+                      ...(typeof form === "object"
+                        ? (form.metadata as object)
                         : {}),
-                      geometry: (
-                        form.metadata as Record<string, unknown> | undefined
-                      )?.geometry
-                        ? JSON.stringify(
-                            (form.metadata as Record<string, unknown>).geometry,
-                          )
-                        : "",
-                    }
-                  : { status: "ACTIVE", organizationId: user.organizationId }
-              }
-              onCancel={() => setForm(null)}
-              onSubmit={(body) => {
-                const data: Record<string, unknown> = {
-                  ...body,
-                  kind,
-                  metadata: {
-                    ...(typeof form === "object"
-                      ? (form.metadata as object)
-                      : {}),
-                    description: body.description,
-                    maintenanceAt: body.maintenanceAt,
-                    deviceId: body.deviceId,
-                  },
-                };
-                if (body.geometry) {
-                  data.metadata = {
-                    ...(data.metadata as object),
-                    geometry:
-                      typeof body.geometry === "string"
-                        ? JSON.parse(body.geometry)
-                        : body.geometry,
-                    geometryContext: body.geometryContext,
+                      description: body.description,
+                      maintenanceAt: body.maintenanceAt,
+                      deviceId: body.deviceId,
+                    },
                   };
-                  delete data.geometry;
-                }
-                delete data.geometryContext;
-                const original = catalog.data?.items.find(
-                  (r) => r.id === body.sourceDeviceId,
-                );
-                if (original) {
-                  data.productKey = original.productKey;
-                  data.sn = body.sn || original.sn;
-                  data.longitude = body.longitude ?? original.longitude;
-                  data.latitude = body.latitude ?? original.latitude;
-                }
-                return mutate(
-                  () =>
-                    write(
-                      `/resources${typeof form === "object" && form.id ? `/${form.id}` : ""}`,
-                      data,
-                      typeof form === "object" && form.id ? "PUT" : "POST",
-                    ),
-                  "资源档案已保存",
-                );
-              }}
-            />
+                  if (body.geometry) {
+                    data.metadata = {
+                      ...(data.metadata as object),
+                      geometry:
+                        typeof body.geometry === "string"
+                          ? JSON.parse(body.geometry)
+                          : body.geometry,
+                      geometryContext: body.geometryContext,
+                    };
+                    delete data.geometry;
+                  }
+                  if (
+                    kind === "AIRSPACE" &&
+                    body.airspaceProfile !== undefined
+                  ) {
+                    data.metadata = {
+                      ...(data.metadata as object),
+                      airspaceProfile: body.airspaceProfile,
+                    };
+                  }
+                  delete data.airspaceProfile;
+                  delete data.geometryContext;
+                  const original = catalog.data?.items.find(
+                    (r) => r.id === body.sourceDeviceId,
+                  );
+                  if (original) {
+                    data.productKey = original.productKey;
+                    data.sn = body.sn || original.sn;
+                    data.longitude = body.longitude ?? original.longitude;
+                    data.latitude = body.latitude ?? original.latitude;
+                  }
+                  return mutate(
+                    () =>
+                      write(
+                        `/resources${typeof form === "object" && form.id ? `/${form.id}` : ""}`,
+                        data,
+                        typeof form === "object" && form.id ? "PUT" : "POST",
+                      ),
+                    "资源档案已保存",
+                  );
+                }}
+              />
+            </fieldset>
           </div>
         </Modal>
       )}
@@ -584,7 +637,40 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
               />
             </section>
           )}
-          <Details items={resourceDetails(selected, kind)} />
+          {!(kind === "DEVICE" && remote) && (
+            <Details items={resourceDetails(selected, kind)} />
+          )}
+          {kind === "AIRSPACE" && (
+            <section className="section">
+              <h3>空域范围</h3>
+              <p>
+                高度范围：
+                {airspaceHeightLabel(
+                  (selected.metadata as Record<string, unknown> | undefined)
+                    ?.airspaceProfile,
+                )}
+              </p>
+              {!!(selected.metadata as Record<string, unknown> | undefined)
+                ?.geometry && (
+                <div
+                  style={{
+                    height: 320,
+                    position: "relative",
+                    overflow: "hidden",
+                    borderRadius: 7,
+                  }}
+                >
+                  <FlightMap
+                    compact
+                    initialThreeD={false}
+                    objects={[selected]}
+                    focusObject={selected}
+                    selectedObjectId={selected.id}
+                  />
+                </div>
+              )}
+            </section>
+          )}
           {!!selected.metadata && (
             <section className="section">
               <h3>档案信息</h3>
@@ -613,7 +699,7 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
               </Button>
             )}
           {selectedDevice ? (
-            <DeviceFlightHistory device={selectedDevice} />
+            <DeviceDetails device={selectedDevice} />
           ) : kind === "DEVICE" && selected.sourceDeviceId ? (
             <section className="section">
               <h3>设备飞行记录</h3>
@@ -723,6 +809,24 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
             </Button>
           )}
         </Modal>
+      )}
+      {importOpen && manage && kind === "AIRSPACE" && (
+        <AirspaceImport
+          key={user.id}
+          organizations={organizations.data?.items || []}
+          organizationId={user.organizationId}
+          organizationError={organizations.error}
+          onClose={() => setImportOpen(false)}
+          onImported={async (result) => {
+            setRemote(false);
+            setSelected(null);
+            setSearch("");
+            await mutate(
+              () => Promise.resolve(result),
+              `空域导入完成：新增 ${result.imported} 条，跳过 ${result.skipped} 条`,
+            );
+          }}
+        />
       )}
     </div>
   );

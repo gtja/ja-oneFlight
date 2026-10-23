@@ -67,7 +67,8 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("FILE_TOO_LARGE", "附件大小不得超过100MB"));
     }
 
-    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    @ExceptionHandler({org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class})
     public ResponseEntity<?> missingParameter() {
         return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_REQUEST", "缺少必填参数"));
     }

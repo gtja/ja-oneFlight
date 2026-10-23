@@ -25,7 +25,7 @@ public class Resource extends BaseRecord {
     public Double longitude;
     public Double latitude;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(columnDefinition = "MEDIUMTEXT")
     public String metadata;
 
     @Override
@@ -43,12 +43,19 @@ public class Resource extends BaseRecord {
                     "metadata",
                     metadata == null
                             ? java.util.Map.of()
-                            : new com.fasterxml.jackson.databind.ObjectMapper()
+                            : metadataJson()
                                     .readValue(metadata, java.util.Map.class));
         } catch (Exception e) {
             m.put("metadata", java.util.Map.of());
         }
         m.put("name", title);
         return m;
+    }
+
+    private com.fasterxml.jackson.databind.ObjectMapper metadataJson() {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        if ("AIRSPACE".equals(kind))
+            json.enable(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
+        return json;
     }
 }

@@ -5,7 +5,9 @@ const evidence =
 export default defineConfig({
   testDir: "./e2e",
   testMatch:
-    process.env.QA_FEEDBACK_REGRESSIONS === "true"
+    process.env.QA_SPATIAL_LAYOUT_REGRESSIONS === "true"
+      ? "**/spatial-form-layout.spec.ts"
+      : process.env.QA_FEEDBACK_REGRESSIONS === "true"
       ? "**/feedback-regressions.spec.ts"
       : process.env.QA_LIVE_READONLY === "true"
         ? "**/live-readonly.spec.ts"

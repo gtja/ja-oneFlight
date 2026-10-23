@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import GeometryInput from "./GeometryInput";
+import { airspaceProfileError } from "../geometry";
 import SelectControl, { type SelectOption } from "./SelectControl";
 import {
   AlertCircle,
@@ -311,6 +312,10 @@ export function EntityForm({
       setBusy(true);
       const data = { ...values };
       fields.forEach((f) => {
+        if (f.type === "geometry" && f.geometryMode === "AIRSPACE") {
+          const profileError = airspaceProfileError(values.airspaceProfile);
+          if (profileError) throw new Error(profileError);
+        }
         if (f.type === "geometry" && f.required && !values[f.key])
           throw new Error(`请先绘制${f.label}`);
         if (f.type === "number")
@@ -354,6 +359,10 @@ export function EntityForm({
                 value={values[f.key]}
                 context={values[`${f.key}Context`]}
                 mode={f.geometryMode || "AIRSPACE"}
+                airspaceProfile={values.airspaceProfile}
+                onAirspaceProfileChange={(airspaceProfile) =>
+                  setValues((previous) => ({ ...previous, airspaceProfile }))
+                }
                 onChange={(geometry) =>
                   setValues((previous) => ({ ...previous, [f.key]: geometry }))
                 }

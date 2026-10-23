@@ -17,6 +17,11 @@
     0 2px 10px #0009;
   cursor: grab;
 }
+.drawing-waypoint.shape-control {
+  width: 38px;
+  border-radius: 14px;
+  font-size: 10px;
+}
 .drawing-waypoint.first {
   background: #15745c;
 }
@@ -159,6 +164,29 @@
   outline-offset: 2px;
   /* MapLibre updates the element transform while panning; only its children animate. */
   transition: none;
+}
+.flight-map .map-icon-definitions {
+  position: absolute;
+  pointer-events: none;
+  overflow: hidden;
+}
+.flight-map .map-marker > span {
+  width: 25px;
+  height: 25px;
+}
+.flight-map .map-marker > span > svg {
+  flex: none;
+}
+.flight-map.compact:not(.flight-map-editing) .map-tools {
+  top: 12px;
+  right: 12px;
+  max-width: calc(100% - 24px);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.flight-map .map-tools button {
+  white-space: nowrap;
+  flex: none;
 }
 .flight-map .map-marker[aria-disabled="true"] {
   cursor: default;

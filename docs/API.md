@@ -73,6 +73,23 @@
 
 来源成功且无记录时返回空列表；来源未配置、超时或权限失效时返回来源状态及原因，不能转换为成功的空列表。来源状态接口不泄露敏感配置。
 
+## 本地空域高度与 GeoJSON 批量导入
+
+空域继续使用 `/api/v1/resources` 和 `kind=AIRSPACE`。平面范围保存在 `metadata.geometry`；独立高度模型为 `metadata.airspaceProfile:{reference:"AGL"|"AMSL"|null,lowerHeightMeters:number|null,upperHeightMeters:number|null}`，单位米。AGL 为离地高度且不得为负；AMSL 为海拔高度，允许负数。填写任一数值必须明确基准，两值均有时下限不得高于上限，数值须有限。未填写保持未知，不从来源坐标 Z、来源高度字段或航线规划高度推导，不补零。高度、范围是本地档案，不下发电子围栏或设备限高，不改变飞控放行。
+
+圆形和矩形编辑仍提交标准 Polygon，不新增圆形专属接口或后端几何类型。可选 `metadata.geometryContext.airspaceShape` 保存编辑参数：`{type:"CIRCLE",center:[longitude,latitude],radiusMeters}` 或 `{type:"RECTANGLE",west,south,east,north}`；所有位置使用 WGS84。该参数只辅助恢复编辑工具，地图、拓扑校验及业务范围以 `metadata.geometry` 为准，不采用参数替换已保存范围。新增圆形用64个外环采样点及闭合点表达，来源规则圆形缩放/平移保留原顶点数量、顺序和附加维度；切为多边形后清除形状参数。高度及来源 Z 保持独立语义。
+
+新建或修改空域范围与文件导入共用后端 Polygon 校验，包括 WGS84 经度/纬度范围、有限坐标、全部维度首尾闭合、至少三个不同点、非退化、自交及内环合法性。JTS 仅使用 XY 副本做拓扑校验，文件、批次及空域 metadata 读写保持 BigDecimal，后端不额外舍入原坐标的 Z、额外维度和内环。HTTP 预览输出普通 Map 形式的标准 GeoJSON；浏览器绘图仍遵循 JavaScript 数值精度。普通空域保存会在相同几何结构的对应位置复用具有相同双精度表示的旧原始数值，避免只改名称或独立高度时反写浏览器舍入值；真正坐标变化和新结构照常校验及保存，高度字段不参与此恢复。没有改动的历史来源几何可继续归档，不自动转换未知坐标或清洗原值。单 Polygon 最多2000点，含内环和闭合点；单空域序列化 metadata 上限1MiB，预览按真实文件名、编号等来源字段一并核验，V8 将资源 metadata 扩为 MEDIUMTEXT。
+
+仅管理员、运营调度可在当前业务组织和区域授权范围内导入，目标组织须已启用；组织和区域由表单统一选择，文件不能覆盖。区域取当前五个业务区域，并非对多边形行政边界的空间认证。
+
+- `POST /api/v1/resources/airspace-imports/preview`：multipart `file` 和 `options` JSON Blob part（`Content-Type: application/json`）。`options` 为 `{organizationId,region,coordinateReference:"WGS84",defaultAirspaceProfile?}`，上限8KiB、JSON嵌套深度8；超限返回413 `AIRSPACE_OPTIONS_TOO_LARGE`，格式及必填校验失败返回400。文件须为 `.geojson/.json`，1字节至2MiB；接受 Polygon、Feature、FeatureCollection，每批1至100个 Polygon，总点数最多20000。仅接收已确认的 WGS84 经度、纬度；带非空 `crs` 声明的文件须先导出为标准 WGS84 GeoJSON。首期不支持 MultiPolygon、KML/KMZ、Excel/CSV，不自动拆分或转换。
+- `properties.name/model/description/airspaceProfile` 分别映射名称、空域类型、备注和完整高度设置。没有名称时用文件名及条目序号；单个裸 Polygon 用文件名。省略高度设置使用文件统一默认值，显式 `airspaceProfile:null` 保持未设置。可选 `Feature.id` 接受字符串或整数，整数通过 JsonNode 的原始整数值精确转换为字符串归档，不经过浮点数；小数编号拒绝。其他 properties 给出未映射提示，不写入业务字段。
+- 预览返回 `{batchId,expiresAt,canCommit,summary:{total,valid,invalid,duplicates,pointCount},rows}`。每行包含从1开始的 `index`、`title/model/description/geometry/airspaceProfile/pointCount/duplicate` 和 `errors/warnings:[{code,message}]`。高度缺失为警告，允许导入后补齐。可解析的逐条错误仍返回200报告，但任何错误都使 `canCommit=false`、`batchId/expiresAt=null`。非法 JSON/根格式返回400，文件超限返回413 `AIRSPACE_FILE_TOO_LARGE`。有效预览仅暂存不可变批次，15分钟有效，绑定创建者，不创建资源或成功导入审计。
+- `POST /api/v1/resources/airspace-imports/{batchId}/commit`：无请求体，返回 `{batchId,status:"COMMITTED",imported,skipped,ids,importedAt}`。事务中锁定批次和目标组织，重新校验当前身份、创建者、岗位、组织及区域范围；所有资源、审计和完成结果一起提交，失败整批回滚。新资源状态始终 `PENDING_CONFIRMATION`，服务端标记 `FILE_IMPORTED`，不产生监管审批、账号授权或真实设备操作。
+
+提交同一批次重试返回原结果且不重复写入；内容与组织/区域生成稳定资源ID，文件内及跨批次完全相同条目自动跳过，不覆盖现有档案。已有同源文件档案被手工更改时预览或提交返回冲突 `AIRSPACE_IMPORT_CONFLICT`，要求核对，不能以重复上传覆盖修改。过期/已清理批次返回409 `IMPORT_PREVIEW_EXPIRED`，需重新预览；换账号或权限缩减返回403。暂存过期批次每小时清理，完成结果保留供安全重试，完成后清除大体积暂存内容。所有写接口继续使用当前会话及 CSRF。
+
 
 ### 来源业务目录与初始化来源
 

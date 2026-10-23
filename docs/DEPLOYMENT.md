@@ -24,11 +24,13 @@ docker compose logs --tail=100 backend
 
 ## 本机前端与 Java 开发
 
-推荐保持 Docker 三服务运行，在前端修改代码时使用 `./scripts/dev.sh --container-api`。Vite 5173 通过 Nginx 8088 访问同一个 API、会话和附件卷，避免原生 Java 与容器使用同一数据库却使用不同附件目录。
+未启用 4A 或嵌入飞控时，可保持 Docker 三服务运行，使用 `./scripts/dev.sh --container-api`。Vite 5173 通过 Nginx 8088 访问同一个 API、会话和附件卷，避免原生 Java 与容器使用同一数据库却使用不同附件目录。4A 和嵌入飞控需要固定平台入口，不能仅另开 5173 而继续使用另一地址的回调。
 
 原生 Java 调试执行 `./scripts/dev.sh` 或 `./scripts/dev.sh --mysql`，两者都直接使用 `.env` 的远端 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`，不会启动 MySQL 容器或把连接改成 localhost。缺少任一业务库配置时停止启动；`--h2` 明确拒绝，普通 Spring 配置也不再默认创建 H2。`application-test.yml` 的 H2 仅供自动化测试。已有同项目 Docker 后端时仍拒绝启动第二个原生实例，优先使用 `--container-api`；切换运行端前先确认业务库与附件目录对应。
 
-`.local/source.env` 仅能覆盖 `SOURCE_` 来源连接及凭据，不能覆盖业务库或认证模式；业务库以私有 `.env` 为准。原生附件默认保存在 `backend/uploads`，可用 `.env` 的 `UPLOAD_DIRECTORY` 指向已恢复的附件目录。旧 H2 文件不会自动删除或自动覆盖远端数据，已有业务数据迁移须单独备份、核对身份关联及授权后执行。
+原生启动与单镜像打包统一读取根目录私有 `.env`；原生启动不加载 `.local/source.env` 或历史 `.local/run/*preview.env`，避免来源、账号或认证模式漂移。HTTP IP 模式下，只将平台、飞控公开地址分别本地化为 `http://127.0.0.1:${WEB_PORT:-8088}`、`http://127.0.0.1:${FLIGHT_CONTROL_HTTP_PORT:-8089}`，并同步允许来源与非 Secure Cookie；数据库、来源连接、凭据及 4A/飞控模式保留。Vite 直接提供统一平台入口，API 仍由 8080 处理。固定本机地址在发起 4A 登录前规范化，防止 `localhost` 与 `127.0.0.1` 的会话 Cookie 分离。HTTPS 配置不自动降级，继续通过匹配配置的 HTTPS 反向代理访问。
+
+HTTP IP 嵌入飞控沿用已配置的本机代理，开发脚本不会替换或重启它；代理须监听对应飞控端口，且使用与 `.env` 相同的 `FLIGHT_CONTROL_GATEWAY_SECRET`。原生附件默认保存在 `backend/uploads`，可用 `.env` 的 `UPLOAD_DIRECTORY` 指向已恢复的附件目录。正常后端启动会应用尚未执行的 Flyway 迁移。旧 H2 文件不会自动删除或自动覆盖远端数据，已有业务数据迁移须单独备份、核对身份关联及授权后执行。
 
 本机必须共享文件时，执行 `./scripts/up.sh --shared-uploads`。脚本合并已有容器文件和 `backend/uploads`（相同文件名、不同内容时拒绝覆盖），使用 `compose.dev.yaml` 把目录绑定至 `/app/uploads`，并按宿主 UID/GID 运行开发后端，保证两端可读写。单独执行 Compose override 时须设置 `LOCAL_UID=$(id -u) LOCAL_GID=$(id -g)`。切回默认命名卷前，先执行 `./scripts/sync-uploads.sh --shared-uploads` 合并文件，再执行 `./scripts/up.sh`。
 

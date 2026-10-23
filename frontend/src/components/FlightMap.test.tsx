@@ -8,9 +8,10 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import FlightMap from "./FlightMap";
+import FlightMap, { type AreaFocusRequest } from "./FlightMap";
 import { buildingFromFeature } from "./mapBuildings";
 import type { Feature } from "geojson";
+import { airspaceShapePoints } from "../airspaceShapes";
 
 const harness = vi.hoisted(() => {
   type Insets = { left: number; right: number; top: number; bottom: number };
@@ -375,6 +376,46 @@ describe("地图样式与生命周期", () => {
 });
 
 describe("关联设备定位", () => {
+  it("空域范围预览按完整几何定位，轮询同一对象不重新适配", () => {
+    const area = {
+      id: "preview",
+      kind: "AIRSPACE",
+      metadata: {
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [120, 30],
+              [120.2, 30],
+              [120.2, 30.2],
+              [120, 30],
+            ],
+          ],
+        },
+      },
+    };
+    const view = render(
+      <FlightMap compact initialThreeD={false} focusObject={area} />,
+    );
+    const map = harness.instances[0];
+    act(() => map.handlers.get("style.load")?.());
+    expect(map.fits).toEqual([
+      [
+        [
+          [120, 30],
+          [120.2, 30.2],
+        ],
+        { padding: 48, maxZoom: 16, duration: 500 },
+      ],
+    ]);
+    expect(
+      screen.getByRole("button", { name: "2D" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    view.rerender(
+      <FlightMap compact initialThreeD={false} focusObject={{ ...area }} />,
+    );
+    expect(map.fits).toHaveLength(1);
+  });
   it("等待真实坐标后定位一次，缺失坐标不跳到其他设备", () => {
     const view = render(
       <FlightMap
@@ -1089,5 +1130,209 @@ describe("航线编辑与真实楼宇", () => {
       }),
     );
     expect(map.paintCalls).toEqual([]);
+  });
+});
+
+describe("设备分类与区域视角", () => {
+  it("通用DEVICE不遮蔽真实类型，各设备图层独立控制", () => {
+    const objects = [
+      {
+        id: "typed-dock",
+        name: "类型机巢",
+        kind: "DEVICE",
+        type: "DOCK",
+        longitude: 120.1,
+        latitude: 30.2,
+      },
+      {
+        id: "typed-camera",
+        name: "普通摄像机",
+        kind: "DEVICE",
+        type: "CAMERA",
+        longitude: 120.2,
+        latitude: 30.3,
+      },
+      {
+        id: "typed-uav",
+        name: "航空器",
+        type: "UAV",
+        longitude: 120.3,
+        latitude: 30.4,
+      },
+    ];
+    const onSelect = vi.fn();
+    const view = render(
+      <FlightMap
+        objects={objects}
+        onSelect={onSelect}
+        layers={{ devices: false, equipment: false }}
+      />,
+    );
+    act(() => harness.instances[0].handlers.get("style.load")?.());
+    expect(screen.getByRole("button", { name: "类型机巢" }).title).toContain(
+      "机巢",
+    );
+    expect(screen.queryByRole("button", { name: "普通摄像机" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "航空器" })).toBeNull();
+    view.rerender(
+      <FlightMap
+        objects={objects}
+        onSelect={onSelect}
+        layers={{ sites: false, devices: false }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "普通摄像机" }).title).toContain(
+      "摄像机",
+    );
+    expect(screen.queryByRole("button", { name: "类型机巢" })).toBeNull();
+  });
+
+  it("区域定位只消费一次，轮询与切换底图不重放，空区域恢复杭州", () => {
+    const request: AreaFocusRequest = {
+      location: {
+        bounds: [
+          [120.1, 30.2],
+          [120.3, 30.4],
+        ],
+      },
+      revision: 1,
+    };
+    const view = render(<FlightMap areaFocusRequest={request} />);
+    const map = harness.instances[0];
+    expect(map.flyCalls).toHaveLength(0);
+    act(() => map.handlers.get("style.load")?.());
+    expect(map.flyCalls).toHaveLength(1);
+    expect(map.flyCalls[0].center[0]).toBeCloseTo(120.2);
+    view.rerender(
+      <FlightMap
+        areaFocusRequest={{ ...request }}
+        objects={[{ id: "far", type: "UAV", longitude: 80, latitude: 40 }]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "电子图" }));
+    act(() => map.handlers.get("style.load")?.());
+    expect(map.flyCalls).toHaveLength(1);
+    view.rerender(
+      <FlightMap areaFocusRequest={{ location: null, revision: 2 }} />,
+    );
+    expect(map.flyCalls.at(-1)).toMatchObject({
+      center: [120.155, 30.27],
+      zoom: 11.2,
+    });
+    expect(map.flyCalls).toHaveLength(2);
+  });
+
+  it("全国授权设备加载不触发全量视角适配", () => {
+    render(
+      <FlightMap
+        objects={[{ id: "far", type: "UAV", longitude: 80, latitude: 40 }]}
+      />,
+    );
+    const map = harness.instances[0];
+    act(() => map.handlers.get("style.load")?.());
+    expect(map.flyCalls).toHaveLength(0);
+    expect(map.fits).toHaveLength(0);
+  });
+
+  it("圆形保留完整范围但只显示圆心和半径控制点，拖动回传控制点索引", () => {
+    const center: [number, number] = [120, 30];
+    const points = airspaceShapePoints({
+      type: "CIRCLE",
+      center,
+      radiusMeters: 500,
+    }).map(([x, y]): [number, number] => [x, y]);
+    const onMove = vi.fn();
+    render(
+      <FlightMap
+        drawing={{
+          mode: "AIRSPACE",
+          points,
+          controls: [
+            { point: center, label: "圆心" },
+            { point: points[16], label: "半径" },
+          ],
+          selectedIndex: 0,
+          onSelect: vi.fn(),
+          onMove,
+        }}
+      />,
+    );
+    const map = harness.instances[0];
+    act(() => map.handlers.get("style.load")?.());
+    expect(
+      screen.getByRole("button", { name: "圆心，可拖动调整" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "半径，可拖动调整" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "边界点 1，可拖动调整" }),
+    ).toBeNull();
+    expect(map.sourceOptions.get("drawing")).toMatchObject({
+      data: {
+        features: [
+          {
+            geometry: {
+              type: "Polygon",
+              coordinates: [[...points, points[0]]],
+            },
+          },
+        ],
+      },
+    });
+    const handle = harness.markers.find(
+      (marker) => marker.options.element.textContent === "半径",
+    )!;
+    handle.point = [120.01, 30];
+    act(() => handle.handlers.get("dragend")?.());
+    expect(onMove).toHaveBeenCalledWith(1, [120.01, 30]);
+  });
+
+  it("空域统一边界点语义并显示内环，航线首末点不受影响", () => {
+    const hole: [number, number][] = [
+      [120.12, 30.22],
+      [120.13, 30.22],
+      [120.13, 30.23],
+      [120.12, 30.22],
+    ];
+    render(
+      <FlightMap
+        drawing={{
+          mode: "AIRSPACE",
+          points: [
+            [120.1, 30.2],
+            [120.3, 30.2],
+            [120.3, 30.4],
+          ],
+          innerRings: [hole],
+          selectedIndex: 0,
+          onSelect: vi.fn(),
+          onMove: vi.fn(),
+        }}
+      />,
+    );
+    const map = harness.instances[0];
+    act(() => map.handlers.get("style.load")?.());
+    expect(
+      screen.getByRole("button", { name: "边界点 1，可拖动调整" }).className,
+    ).not.toContain("first");
+    expect(
+      screen.getByRole("button", { name: "边界点 3，可拖动调整" }).className,
+    ).not.toContain("last");
+    expect(screen.getByRole("button", { name: "范围总览" }).title).toBe(
+      "查看全部边界点范围",
+    );
+    expect(map.sourceOptions.get("drawing")).toMatchObject({
+      data: {
+        features: [
+          {
+            geometry: {
+              type: "Polygon",
+              coordinates: [expect.any(Array), hole],
+            },
+          },
+        ],
+      },
+    });
   });
 });

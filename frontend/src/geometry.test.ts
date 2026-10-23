@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   drawGeometry,
+  airspaceProfileError,
+  airspaceHeightLabel,
+  geometryInnerRings,
   ensureRouteFlightProfile,
   geometryPoints,
   geometryPositions,
@@ -34,6 +37,52 @@ const building = (
   heightMeters: null,
   center: [120.123, 30.987],
   source: "openfreemap",
+});
+
+describe("空域独立高度基准", () => {
+  it("未知高度保持未明确，零高度合法，海拔可低于零", () => {
+    expect(airspaceProfileError(null)).toBeNull();
+    expect(airspaceHeightLabel(null)).toBe("未明确");
+    expect(
+      airspaceHeightLabel({
+        reference: null,
+        lowerHeightMeters: null,
+        upperHeightMeters: null,
+      }),
+    ).toBe("未明确");
+    expect(
+      airspaceProfileError({
+        reference: "AMSL",
+        lowerHeightMeters: -50,
+        upperHeightMeters: 0,
+      }),
+    ).toBeNull();
+    expect(
+      airspaceHeightLabel({
+        reference: "AGL",
+        lowerHeightMeters: 0,
+        upperHeightMeters: 120,
+      }),
+    ).toBe("离地 0 ～ 120 米");
+    expect(
+      airspaceHeightLabel({
+        reference: "AMSL",
+        lowerHeightMeters: -50,
+        upperHeightMeters: null,
+      }),
+    ).toBe("海拔 -50 ～ 未明确 米");
+  });
+  it.each([
+    { reference: null, lowerHeightMeters: 20, upperHeightMeters: null },
+    { reference: "UNKNOWN", lowerHeightMeters: null, upperHeightMeters: null },
+    { reference: "AGL", lowerHeightMeters: -1, upperHeightMeters: 120 },
+    { reference: "AGL", lowerHeightMeters: 150, upperHeightMeters: 120 },
+    { reference: "AMSL", lowerHeightMeters: NaN, upperHeightMeters: 120 },
+    { reference: "AMSL", lowerHeightMeters: 20, upperHeightMeters: Infinity },
+    { reference: "AGL", lowerHeightMeters: "20", upperHeightMeters: 120 },
+  ])("拒绝非法高度：%j", (profile) => {
+    expect(airspaceProfileError(profile)).toBeTruthy();
+  });
 });
 
 describe("本地航线离地规划高度", () => {
@@ -249,6 +298,9 @@ describe("航线编辑几何契约", () => {
       1,
       [121.1, 30],
     );
+    expect(geometryInnerRings(JSON.stringify(polygon))).toEqual([
+      polygon.coordinates[1],
+    ]);
     const saved = drawGeometry(edited, "AIRSPACE", JSON.stringify(polygon));
     expect(saved?.type).toBe("Polygon");
     if (saved?.type !== "Polygon") throw new Error("Expected polygon");
@@ -268,6 +320,12 @@ describe("航线编辑几何契约", () => {
   });
 
   it("仅支持已知几何类型，拒绝非有限值和越界坐标", () => {
+    expect(
+      geometryInnerRings({
+        type: "Polygon",
+        coordinates: [[], null, {}, [[120, NaN]]],
+      }),
+    ).toEqual([]);
     expect(
       geometryPositions({ type: "Point", coordinates: [120, 30] }, "ROUTE"),
     ).toEqual([]);

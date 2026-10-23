@@ -1,0 +1,115 @@
+.request-assistant .request-steps {
+  display: flex;
+  gap: 20px;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 22px;
+  flex-wrap: wrap;
+}
+.request-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.request-steps li span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+.request-steps li[aria-current="step"] {
+  color: #b4d6f3;
+}
+.request-steps li[aria-current="step"] span {
+  background: #2e5372;
+  border-color: #6389ad;
+}
+.request-scenes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.request-scenes > button {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  text-align: left;
+  gap: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1b2d3b;
+  padding: 18px;
+  color: #b5cddd;
+}
+.request-scenes > button.selected {
+  border-color: #78a7d1;
+  box-shadow: inset 0 0 0 1px #78a7d1;
+}
+.request-scenes small {
+  grid-column: 2;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.request-assistant .field > span {
+  font-size: 12px;
+  color: #b8cad8;
+}
+.request-assistant .field em {
+  color: #dbad78;
+  font-style: normal;
+  margin-left: 4px;
+}
+.request-assistant .field .select-filter {
+  width: 100%;
+}
+.request-template-note {
+  font-size: 12px;
+  color: #a7c4db;
+  margin-bottom: 18px;
+}
+.request-preview {
+  background: #172936;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 16px;
+  margin: 14px 0;
+}
+.request-preview h3 {
+  margin-top: 0;
+}
+.request-preview p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.9;
+  font-size: 12px;
+}
+.request-assistant .form-error {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 650px) {
+  .request-scenes {
+    grid-template-columns: 1fr;
+  }
+  .request-assistant .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .request-assistant .field.wide {
+    grid-column: 1;
+  }
+  .request-assistant .request-steps {
+    gap: 12px;
+  }
+  .request-assistant .form-footer {
+    flex-wrap: wrap;
+  }
+}
+.request-assistant .request-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}

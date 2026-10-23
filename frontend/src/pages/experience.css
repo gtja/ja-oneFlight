@@ -1,0 +1,143 @@
+/* Responsive shell only while an updated workspace is mounted. */
+@media (max-width: 900px) {
+  html:has(.experience-page),
+  body:has(.experience-page),
+  #root:has(.experience-page) {
+    min-width: 0;
+  }
+  .app-shell:has(.experience-page) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--header) 68px minmax(0, 1fr);
+  }
+  .app-shell:has(.experience-page) > .sidebar {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: row;
+    min-width: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 3px;
+  }
+  .app-shell:has(.experience-page) > .sidebar nav {
+    flex: 1;
+    min-width: 0;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 3px;
+  }
+  .app-shell:has(.experience-page) > .sidebar nav > button {
+    min-width: 64px;
+    width: 64px;
+    height: 58px;
+    flex: none;
+    font-size: 11px;
+  }
+  .app-shell:has(.experience-page) .sidebar-bottom {
+    display: flex;
+    gap: 5px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+    padding: 0 4px;
+  }
+  .app-shell:has(.experience-page) > .main-workspace {
+    grid-row: 3;
+    grid-column: 1;
+  }
+  .experience-page > .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .experience-page .header-actions,
+  .experience-page .table-toolbar,
+  .experience-page .stage-bar {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .experience-page .table-wrap {
+    max-width: 100%;
+  }
+  .resources-page .resource-layout {
+    display: block;
+    overflow: auto;
+  }
+  .resources-page .resource-catalog {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 10px;
+  }
+  .resources-page .resource-catalog > .catalog-title,
+  .resources-page .resource-catalog > h4 {
+    display: none;
+  }
+  .resources-page .resource-catalog > button {
+    width: auto;
+    padding: 7px;
+    margin: 0;
+  }
+  .resources-page .resource-main {
+    padding: 12px;
+    overflow: visible;
+  }
+  .task-page .task-flow-guide {
+    flex: none;
+  }
+  .task-page .task-flow-guide .section-title {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .task-page .task-flow-guide ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .task-page .task-flow-guide li > svg {
+    display: none;
+  }
+  body:has(.experience-page) .modal-backdrop {
+    padding: 12px;
+  }
+  body:has(.experience-page) .modal {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  body:has(.experience-page) .modal-body {
+    padding: 14px;
+  }
+}
+@media (max-width: 600px) {
+  .app-shell:has(.experience-page) > .topbar {
+    padding: 0 8px;
+    gap: 6px;
+  }
+  .app-shell:has(.experience-page) .brand {
+    gap: 6px;
+  }
+  .app-shell:has(.experience-page) .brand img {
+    width: 24px;
+    height: 24px;
+  }
+  .app-shell:has(.experience-page) .brand strong {
+    font-size: 12px;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .app-shell:has(.experience-page) .brand > i,
+  .app-shell:has(.experience-page) .brand > span,
+  .app-shell:has(.experience-page) .topbar time {
+    display: none;
+  }
+  .app-shell:has(.experience-page) .topbar-actions {
+    gap: 4px;
+  }
+  .app-shell:has(.experience-page) .topbar .button {
+    padding: 5px 6px;
+    font-size: 10px;
+  }
+  .app-shell:has(.experience-page) .user-menu > button {
+    gap: 3px;
+    padding: 5px;
+    font-size: 10px;
+  }
+}

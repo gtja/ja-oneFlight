@@ -2,6 +2,12 @@
 
 采用 React/TypeScript 单页应用、一个 Java/Spring Boot 应用和独立 MySQL 8.4 业务库。本地开发与当前服务器部署共用配置指定的远端业务库，`DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 为必填项，普通应用不再回退文件 H2。H2 仅用于 `test` profile 的合成自动化测试；真实来源仍通过 HTTP、只读 JDBC 和 MQTT 适配，不复用 `ja-oneflight-demo` 业务实现。
 
+本地空域由资源档案 `kind=AIRSPACE` 管理，Polygon 保存在 `metadata.geometry`，独立高度上下限及 AGL/AMSL 基准保存在 `metadata.airspaceProfile`；空值保持未知，来源坐标 Z 和航线 `geometryContext.flightProfile` 保持各自语义。新建或修改几何与本地 GeoJSON 导入共享 `AirspacePolicy`：JTS 在 XY 副本上验证闭环、退化、自交和内环，原坐标数组及附加维度不被重建；历史未改动的来源几何不被重新解释。
+
+`integration/AirspaceFileParser` 只解析本地 WGS84 Polygon 文件，`AirspaceImportService` 编排预览和提交，不读取或写入真实来源。预览暂存在操作者绑定、15分钟有效的 `airspace_import_batch`，不创建业务资源；提交锁定批次和目标组织后重新校验当前岗位及组织/区域授权，以同一事务保存待确认资源、审计和幂等结果。内容与归属生成稳定资源ID，完全相同条目跳过，已有导入档案变更则冲突，失败整批回滚。过期未提交批次定时清理，已完成结果保留，批次大内容完成后删除。文件导入只登记本地空域，不改变监管审批、飞控会话或设备电子围栏。
+
+Flyway V8 将资源 metadata 扩为 MEDIUMTEXT 并新增导入批次表；单资源仍限制1MiB。首期文件上限2MiB、100个 Polygon、单 Polygon 2000点、总20000点（均含内环及闭合点）。未设置完整高度也可导入为待确认；文件坐标须显式确认 WGS84，不支持未知基准转换、MultiPolygon 自动拆分或行政区空间认证。
+
 ## 代码组织与飞控入口
 
 开发边界、模块位置和验证命令见 [开发规范](DEVELOPMENT.md)，Agent 执行约定见根 [AGENTS.md](../AGENTS.md)。前端保留 `api.ts` 公共入口，将 HTTP、类型和 React Query Hook 分离；资源与服务页面的专属配置和展示组件放在各自子目录。后端保持现有应用及包结构，候选查询装配和列表组织从工作流编排中分离，公共业务策略继续复用。
@@ -51,6 +57,8 @@ Spring Security 仅对页面入口、`/index.html`、`/logo.svg`、`/assets/**` 
 ## 权限和数据
 
 指挥大屏采用独立 React 页面和 `FlightSimulation3D` 组件，恢复普通业务地图与面板样式。业务面板按当前授权范围读取完整分页目录，区域筛选统一应用于业务统计及地图对象；今日任务图表以 Asia/Shanghai 的计划开始时间分组。
+
+态势首页与指挥大屏共用本地资源完整目录缓存，空域均以 `metadata.geometry` 作为地图范围。资源保存及导入提交后统一失效查询缓存；页面停留期间每30秒刷新资源目录，以接收其他页面或客户端的空域变更，继续应用当前授权及区域筛选。态势首页只保存选中对象编号，详情取自最新目录，不保留已从目录移除的旧资源快照。
 
 飞行展示的数据源与渲染分离。`flightReports.ts` 定义带设备 ID、UTC 毫秒观测时间、WGS84 经纬度、米制高度和显式 AGL/AMSL 基准的 `AircraftPositionReport`。本地 demo 每秒产生一次报告，经相同的历史归并和渲染链路展示；不写入设备、任务、遥测或飞行统计。机位只在已收到的位置点之间平滑，并钳制在最后报告位置；历史航迹按观测时间连线，不预绘未来路线、不按尾迹窗口消失。高度基准切换时断开连线，避免混接不同基准。
 
