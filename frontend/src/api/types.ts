@@ -64,3 +64,25 @@ export type CurrentUser = {
   identitySource?: "local" | "4a";
   businessAccessAssigned?: boolean;
 };
+export type WeatherObservation = {
+  deviceId: string;
+  deviceName?: string | null;
+  status: "ONLINE" | "OFFLINE" | "UNKNOWN" | string;
+  observedAt?: string | null;
+  receivedAt?: string | null;
+  windSpeed?: number | null;
+  temperature?: number | null;
+  humidity?: number | null;
+  longitude?: number | null;
+  latitude?: number | null;
+};
+export type WeatherOverview = {
+  sourceHealth: {
+    name: string;
+    state: "UNCONFIGURED" | "HEALTHY" | "ERROR" | "STALE" | string;
+    checkedAt?: string | null;
+    lastSuccessAt?: string | null;
+    message?: string | null;
+  };
+  stations: WeatherObservation[];
+};

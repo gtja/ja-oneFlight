@@ -15,10 +15,12 @@ import {
 import {
   entityName,
   useCatalog,
+  useData,
   useDevices,
   useList,
   write,
   type Entity,
+  type WeatherOverview,
 } from "../api";
 import { dateTime, metersLabel, REGIONS, secondsLabel } from "../domain";
 import { useUser } from "../context";
@@ -26,7 +28,9 @@ import { Provenance, useMutationFeedback } from "../components/Workflow";
 import SourceRecords from "../components/SourceRecords";
 import DeviceDetails from "../components/DeviceDetails";
 import FlightMap from "../components/FlightMap";
+import { mapObjectGeometry } from "../components/mapObjectFocus";
 import AirspaceImport from "./resources/AirspaceImport";
+import WeatherResources from "./resources/WeatherResources";
 import { airspaceHeightLabel } from "../geometry";
 import { summarizeFlightTotals } from "../flightStatistics";
 import {
@@ -38,6 +42,7 @@ import {
 } from "./resources/config";
 import { resourceColumns } from "./resources/columns";
 import { resourceDetails, resourceMetadataDetails } from "./resources/details";
+import MediaAssets from "./resources/MediaAssets";
 import {
   Button,
   DataTable,
@@ -51,24 +56,35 @@ import {
   Status,
   Unavailable,
 } from "../components/UI";
-export default function Resources({ navigate }: { navigate?: Navigate }) {
+export default function Resources({
+  navigate,
+  initialKind,
+  initialSearch,
+}: {
+  navigate?: Navigate;
+  initialKind?: string;
+  initialSearch?: string;
+}) {
   const user = useUser();
   const manage = ["ADMIN", "DISPATCH"].includes(user.role);
-  const [kind, setKind] = useState("DEVICE");
+  const [kind, setKind] = useState(initialKind || "DEVICE");
   const [remote, setRemote] = useState(true);
   const [sourceMedia, setSourceMedia] = useState(false);
   const [deviceType, setDeviceType] = useState("");
   const [statisticsOnly, setStatisticsOnly] = useState("");
   const [flightDeviceId, setFlightDeviceId] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch || "");
   const [selected, setSelected] = useState<Entity | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [mediaReviewNote, setMediaReviewNote] = useState("");
+  const [mediaReviewError, setMediaReviewError] = useState("");
   const [form, setForm] = useState<Entity | boolean | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const sourceCatalogKind = manage && remote ? sourceCatalogs[kind] : undefined;
   const local = useList(
     "/resources",
     { kind, keyword: search },
-    !["FLIGHT", "MEDIA"].includes(kind) &&
+    !["FLIGHT", "MEDIA", "WEATHER"].includes(kind) &&
       !(kind === "DEVICE" && remote) &&
       !sourceCatalogKind,
   );
@@ -132,7 +148,17 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
     { deviceId: flightDeviceId || undefined, pageSize: 20 },
     kind === "FLIGHT",
   );
-  const files = useList("/attachments", {}, kind === "MEDIA");
+  const files = useList("/attachments", {}, kind === "MEDIA" && sourceMedia);
+  const mediaCatalog = useCatalog(
+    "/attachments",
+    {},
+    kind === "MEDIA" && !sourceMedia,
+  );
+  const weather = useData<WeatherOverview>(
+    "/weather/observations",
+    kind === "WEATHER",
+    10_000,
+  );
   const organizations = useCatalog(
     "/organizations",
     {},
@@ -151,6 +177,7 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
   const rows = (query.data?.items || []).filter(
     (r) =>
       (kind !== "FLIGHT" && kind !== "MEDIA") ||
+      (kind === "MEDIA" && !sourceMedia) ||
       !search ||
       [entityName(r), r.id, r.deviceId, r.sortieNo, r.fileName].some((v) =>
         String(v ?? "")
@@ -165,9 +192,45 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
     dispatchBySource,
     form,
   });
+  const airspacesWithoutGeometry =
+    kind === "AIRSPACE" ? rows.filter((row) => !mapObjectGeometry(row)).length : 0;
+
+  async function reviewSelectedMedia(decision: "PASSED" | "NEEDS_SUPPLEMENT") {
+    if (!selected) return;
+    setMediaReviewError("");
+    try {
+      const result = await mutate(
+        () => write(`/attachments/${encodeURIComponent(selected.id)}/quality`, {
+          decision,
+          note: mediaReviewNote,
+        }, "PATCH"),
+        decision === "PASSED" ? "成果质检已通过" : "已要求补传成果",
+      );
+      setSelected(result as Entity);
+      await mediaCatalog.refetch();
+    } catch (cause) {
+      setMediaReviewError(cause instanceof Error ? cause.message : "成果质检操作失败");
+    }
+  }
+
+  async function archiveSelectedMedia() {
+    if (!selected) return;
+    setMediaReviewError("");
+    try {
+      const result = await mutate(
+        () => write(`/attachments/${encodeURIComponent(selected.id)}/archive`, {}),
+        "成果已归档",
+      );
+      setSelected(result as Entity);
+      await mediaCatalog.refetch();
+    } catch (cause) {
+      setMediaReviewError(cause instanceof Error ? cause.message : "成果归档失败");
+    }
+  }
+
   return (
     <div className="page resources-page experience-page">
-      <PageHeader title="资源管理" subtitle="设备、人员与数据档案统一管理" />
+      <PageHeader title="资源管理" />
       <div className="resource-layout">
         <aside className="resource-catalog">
           <div className="catalog-title">
@@ -212,7 +275,25 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
             <Database size={14} />
             数据资源
           </h4>
-          {["ROUTE", "AIRSPACE", "FLIGHT", "MEDIA"].map((k) => (
+          {["MEDIA", "AIRSPACE"].map((k) => (
+            <button
+              className={kind === k ? "active" : ""}
+              key={k}
+              onClick={() => {
+                setKind(k);
+                setRemote(manage && !!sourceCatalogs[k]);
+                setSearch("");
+                setSelected(null);
+              }}
+            >
+              <FileText size={13} />
+              {kinds[k]}
+              {k === "MEDIA" && mediaCatalog.data && <small>{mediaCatalog.data.total} 份</small>}
+              {k === "AIRSPACE" && kind === "AIRSPACE" && query.data && <small>{query.data.total} 份</small>}
+            </button>
+          ))}
+          <h4 className="resource-extra-heading">其他数据</h4>
+          {["ROUTE", "FLIGHT", "WEATHER"].map((k) => (
             <button
               className={kind === k ? "active" : ""}
               key={k}
@@ -228,8 +309,15 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
             </button>
           ))}
         </aside>
+        {kind === "WEATHER" ? (
+          <WeatherResources
+            data={weather.data}
+            loading={weather.isPending}
+            error={weather.error}
+          />
+        ) : (
         <div className="resource-main">
-          <div className="table-toolbar">
+          {!(kind === "MEDIA" && !sourceMedia) && <div className="table-toolbar">
             <div>
               <h2>{kinds[kind]}</h2>
               <p>
@@ -291,7 +379,7 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
                 批量导入
               </Button>
             )}
-          </div>
+          </div>}
           {kind === "DEVICE" && (
             <>
               <p className="notice" aria-label="设备接入与调度说明">
@@ -316,8 +404,8 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
                 : "来源目录由平台管理员和调度人员按授权范围查看。"}
             </p>
           )}
-          {!sourceCatalogKind && (
-            <div className="filter-bar">
+          {!sourceCatalogKind && kind !== "MEDIA" && (
+          <div className="filter-bar">
               <SearchBox
                 value={search}
                 onChange={setSearch}
@@ -396,6 +484,40 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
               </p>
             </>
           )}
+          {kind === "AIRSPACE" && rows.length > 0 && (
+            <section className="resource-airspace-overview" aria-label="空域资源地图">
+              <div className="resource-airspace-map">
+                <FlightMap
+                  compact
+                  initialThreeD={false}
+                  objects={rows}
+                  focusObject={selected || rows[0]}
+                  selectedObjectId={selected?.id}
+                  onSelect={setSelected}
+                />
+              </div>
+              <div className="resource-airspace-list" aria-label="当前页空域列表">
+                <strong>当前页空域 · {rows.length} 条</strong>
+                {airspacesWithoutGeometry > 0 && (
+                  <p className="muted" role="status">
+                    {airspacesWithoutGeometry} 条记录缺少有效边界，已保留在清单中。
+                  </p>
+                )}
+                {rows.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className={selected?.id === row.id ? "active" : ""}
+                    onClick={() => setSelected(row)}
+                    aria-pressed={selected?.id === row.id}
+                  >
+                    <span>{entityName(row)}</span>
+                    <small>{row.region || "区域未填写"} · {airspaceHeightLabel((row.metadata as Record<string, unknown> | undefined)?.airspaceProfile)}</small>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           {kind === "MEDIA" && manage && (
             <div className="segmented">
               <button
@@ -412,7 +534,23 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
               </button>
             </div>
           )}
-          {sourceCatalogKind ? (
+          {kind === "MEDIA" && !sourceMedia ? (
+            <MediaAssets
+              rows={mediaCatalog.data?.items || []}
+              loading={mediaCatalog.isLoading}
+              error={mediaCatalog.error}
+              total={mediaCatalog.data?.total || 0}
+              search={search}
+              onSearchChange={setSearch}
+              onSourceMedia={() => setSourceMedia(true)}
+              onOpen={(asset) => {
+                setSelected(asset);
+                setPreviewFailed(false);
+                setMediaReviewNote("");
+                setMediaReviewError("");
+              }}
+            />
+          ) : sourceCatalogKind ? (
             <SourceRecords
               key={sourceCatalogKind}
               kind={sourceCatalogKind}
@@ -432,7 +570,10 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
             <>
               <DataTable
                 rows={rows}
-                onRow={setSelected}
+                onRow={(row) => {
+                  setSelected(row);
+                  setPreviewFailed(false);
+                }}
                 loading={query.isLoading}
                 error={query.error}
                 emptyTitle={
@@ -464,6 +605,7 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
             </p>
           )}
         </div>
+        )}
       </div>
       {form && (
         <Modal
@@ -591,7 +733,10 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
       {selected && (
         <Modal
           title={entityName(selected)}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            setSelected(null);
+            setPreviewFailed(false);
+          }}
           wide
         >
           <div className="detail-heading">
@@ -637,9 +782,22 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
               />
             </section>
           )}
-          {!(kind === "DEVICE" && remote) && (
+          {kind === "MEDIA" ? (
+            <Details
+              items={[
+                { label: "关联任务或线索", value: selected.shared ? "共享成果" : String(selected.entityTitle || "—") },
+                { label: "采集来源", value: selected.shared ? "共享成果" : selected.entityType === "TASK" ? "任务成果" : "线索证据" },
+                { label: "所属区域", value: String(selected.region || "—") },
+                { label: "成果类型", value: String(selected.contentType || "未知") },
+                { label: "采集时间", value: dateTime(selected.createdAt) },
+                { label: "质检状态", value: selected.archivedAt ? "已归档" : selected.qualityStatus === "PASSED" ? "通过" : selected.qualityStatus === "NEEDS_SUPPLEMENT" ? "待补传" : "待质检" },
+                ...(selected.qualityNote ? [{ label: "质检意见", value: String(selected.qualityNote) }] : []),
+                ...(selected.shareExpiresAt ? [{ label: "共享有效至", value: dateTime(selected.shareExpiresAt) }] : []),
+              ]}
+            />
+          ) : !(kind === "DEVICE" && remote) ? (
             <Details items={resourceDetails(selected, kind)} />
-          )}
+          ) : null}
           {kind === "AIRSPACE" && (
             <section className="section">
               <h3>空域范围</h3>
@@ -759,19 +917,66 @@ export default function Resources({ navigate }: { navigate?: Navigate }) {
           )}
           {kind === "FLIGHT" && (
             <Unavailable
-              title="完整历史轨迹及媒体来源待接通"
-              description="保留原始架次记录，不拼接零散坐标生成历史轨迹。"
+              title="历史轨迹请在牍术飞控查看"
+              description="平台保留来源架次记录。进入飞控后，先按本平台现有任务放行流程核验，再查看牍术提供的历史记录。"
             />
           )}
-          {kind === "MEDIA" && (
-            <a
-              className="button primary"
-              href={`/api/v1/attachments/${selected.id}/content`}
-              target="_blank"
-              rel="noreferrer"
+          {kind === "FLIGHT" && navigate && ["ADMIN", "DISPATCH", "PILOT"].includes(user.role) && !!selected.deviceId && (
+            <Button
+              onClick={() => navigate("flight", { deviceId: String(selected.deviceId) })}
             >
-              预览 / 下载文件
-            </a>
+              进入牍术飞控并检查关联任务 <ArrowRight size={13} />
+            </Button>
+          )}
+          {kind === "MEDIA" && (
+            <section className="resource-media-preview" aria-label="成果媒体预览">
+              {/^image\/(jpeg|png|gif|webp)$/i.test(String(selected.contentType || "")) && !previewFailed ? (
+                <img
+                  src={`/api/v1/attachments/${encodeURIComponent(selected.id)}/preview`}
+                  alt={String(selected.fileName || selected.title || "成果图片")}
+                  onError={() => setPreviewFailed(true)}
+                />
+              ) : (
+                <p className="muted">
+                  {previewFailed ? "图片暂时无法预览，请下载文件查看。" : "该文件类型不支持在线预览，可下载查看。"}
+                </p>
+              )}
+              <a
+                className="button primary"
+                href={`/api/v1/attachments/${encodeURIComponent(selected.id)}/download`}
+              >
+                下载文件
+              </a>
+              {manage && !selected.shared && (
+                <div className="media-review-actions">
+                  {mediaReviewError && <p className="form-error" role="alert">{mediaReviewError}</p>}
+                  {!selected.archivedAt && (
+                    <>
+                      <label>
+                        补充说明
+                        <textarea
+                          value={mediaReviewNote}
+                          onChange={(event) => setMediaReviewNote(event.target.value)}
+                          maxLength={2000}
+                          placeholder="要求补传时填写原因"
+                        />
+                      </label>
+                      <div>
+                        <Button onClick={() => void reviewSelectedMedia("NEEDS_SUPPLEMENT")} disabled={!mediaReviewNote.trim()}>
+                          要求补传
+                        </Button>
+                        <Button primary onClick={() => void reviewSelectedMedia("PASSED")}>
+                          质检通过
+                        </Button>
+                        {selected.qualityStatus === "PASSED" && (
+                          <Button onClick={() => void archiveSelectedMedia()}>归档成果</Button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </section>
           )}
           {manage && !remote && !["FLIGHT", "MEDIA"].includes(kind) && (
             <Button

@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { api, ApiError, queryString, write, type Page } from "../api";
 import { Button, Empty, PageHeader, SearchBox } from "../components/UI";
-import SelectControl from "../components/SelectControl";
 import { fourALoginUrl } from "../components/Login";
 import { useUser } from "../context";
 import { dateTime, statusLabel } from "../domain";
@@ -508,6 +507,16 @@ export function EmbeddedFlight({
       all.indexOf(item) === index &&
       !(index === 1 && httpCompatibility && item.startsWith("HTTP 兼容模式")),
   );
+  const taskItems = candidates.data?.items || [];
+  const currentTaskCheck =
+    activeCheck ||
+    (preflight.data?.taskId === selectedTask ? preflight.data : undefined);
+  const queueItems =
+    selectedTask &&
+    currentTaskCheck &&
+    !taskItems.some((item) => item.taskId === selectedTask)
+      ? [currentTaskCheck, ...taskItems]
+      : taskItems;
   return (
     <div className="page embedded-flight">
       <PageHeader
@@ -538,124 +547,30 @@ export function EmbeddedFlight({
           </Button>
         )}
       </PageHeader>
-      {activeCheck ? (
-        <>
-          <section className="flight-entry-summary" aria-label="当前放行任务">
-            <div className="flight-entry-summary-heading">
-              <strong>
-                <ShieldCheck size={15} />
-                {activeCheck.context.task.title}
-              </strong>
-              <span className="flight-entry-active-brief">
-                {activeCheck.context.device?.title || "执行设备"} ·{" "}
-                {dateTime(activeCheck.context.task.startAt)} 至{" "}
-                {dateTime(activeCheck.context.task.endAt)}
-              </span>
-              <Button
-                small
-                aria-expanded={!collapsed}
-                onClick={() => setCollapsed((value) => !value)}
-              >
-                {collapsed ? (
-                  <ChevronDown size={13} />
-                ) : (
-                  <ChevronUp size={13} />
-                )}
-                {collapsed ? "展开任务信息" : "收起任务信息"}
-              </Button>
-            </div>
-            {!collapsed && (
-              <>
-                <TaskContext check={activeCheck} navigate={navigate} />
-                <p className="muted">
-                  本平台审批用于入口业务放行；牍术内的设备切换与真实操作按牍术权限执行。
-                </p>
-              </>
-            )}
-            {activeWarning && (
-              <p role="alert" className="flight-entry-warning">
-                {activeWarning} 当前已打开的飞控继续保留，再次进入将重新检查。
-              </p>
-            )}
-          </section>
-          {notices.length > 0 && (
-            <p className="embedded-flight-notice" role="note">
-              {notices.join(" ")}
-            </p>
-          )}
-          <div className="embedded-flight-stage">
-            {!error && state.url && (
-              <iframe
-                ref={frame}
-                title="牍术飞控操作区"
-                src={state.url}
-                referrerPolicy="no-referrer"
-                allow={
-                  !httpCompatibility &&
-                  window.isSecureContext &&
-                  options.capabilities?.microphone === true
-                    ? "fullscreen; autoplay; microphone"
-                    : "fullscreen; autoplay"
-                }
-                sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-pointer-lock allow-popups"
-                allowFullScreen
-                style={{ visibility: state.ready ? "visible" : "hidden" }}
-              />
-            )}
-            {!state.ready && (
-              <div className="embedded-flight-status" role="status">
-                <Empty
-                  loading={!error}
-                  title="飞控暂不可用"
-                  description={error || "正在建立飞控登录状态…"}
-                />
-                {error &&
-                  !configurationError &&
-                  (state.loginRequired ? (
-                    <a
-                      className="button primary"
-                      href={fourALoginUrl({
-                        view: "flight",
-                        deviceId,
-                        taskId: activeCheck.taskId,
-                      })}
-                    >
-                      4A 统一登录
-                    </a>
-                  ) : (
-                    <Button
-                      onClick={() => {
-                        setActiveCheck(undefined);
-                        setState({});
-                        setLiveWarning("");
-                        void preflight.refetch();
-                      }}
-                    >
-                      <RefreshCw size={13} />
-                      重新检查任务
-                    </Button>
-                  ))}
-              </div>
-            )}
-          </div>
-        </>
-      ) : configurationError ? (
-        <Empty title="飞控暂不可用" description={configurationError} />
-      ) : !canRequest ? (
-        <Empty
-          title="尚无飞控入口业务权限"
-          description="请由平台管理员在权限管理中配置业务权限。进入飞控须以管理员、调度或飞手身份执行已放行任务。"
-        />
-      ) : (
-        <section className="flight-entry-panel">
+      <div className="embedded-flight-workspace">
+        <section className="flight-entry-panel" aria-label="执行作业">
           <div className="flight-entry-card">
             <div className="flight-entry-card-heading">
-              <h2>选择执行任务</h2>
+              <h2>
+                <ShieldCheck size={14} />
+                执行作业
+              </h2>
+              <span>{candidates.data?.total ?? "—"}</span>
+            </div>
+            <div className="flight-entry-search-row">
+              <SearchBox
+                value={keyword}
+                onChange={(value) => {
+                  setKeyword(value);
+                  setPage(1);
+                }}
+                placeholder="搜索作业或设备"
+              />
               <label className="flight-entry-expired">
                 <input
                   type="checkbox"
                   checked={includeExpired}
-                  disabled={launching}
+                  disabled={launching || !!activeCheck}
                   onChange={(event) => {
                     setIncludeExpired(event.target.checked);
                     setPage(1);
@@ -664,70 +579,65 @@ export function EmbeddedFlight({
                 查看已过期任务
               </label>
             </div>
-            {(keyword || (candidates.data?.total || 0) > 5) && (
-              <SearchBox
-                value={keyword}
-                onChange={(value) => {
-                  setKeyword(value);
-                  setPage(1);
-                }}
-                placeholder="搜索任务名称"
-              />
-            )}
-            {deviceId && <p className="muted">已筛选所选设备的关联任务。</p>}
-            {(selectedTask || (candidates.data?.total || 0) > 0) && (
-              <div className="flight-entry-select">
-                <label htmlFor="flight-entry-task">执行任务</label>
-                <SelectControl
-                  id="flight-entry-task"
-                  aria-label="执行任务"
-                  value={selectedTask}
-                  disabled={launching}
-                  searchable={false}
-                  onChange={(value) => {
-                    autoSelectionUsed.current = true;
-                    setSelectedTask(value);
-                    setChecksExpanded(false);
-                    setState({});
-                  }}
-                  options={[
-                    { value: "", label: "请选择执行任务" },
-                    ...(selectedTask &&
-                    !candidates.data?.items.some(
-                      (item) => item.taskId === selectedTask,
-                    )
-                      ? [
-                          {
-                            value: selectedTask,
-                            label:
-                              preflight.data?.context.task.title ||
-                              "当前关联任务",
-                          },
-                        ]
-                      : []),
-                    ...(candidates.data?.items.map((item) => ({
-                      value: item.taskId,
-                      label: `${item.context.task.title} · ${statusLabel(item.context.task.status)}${item.eligible ? " · 可进入" : ""}`,
-                      description: `设备：${item.context.device?.title || "未分配"} · 飞手：${item.context.pilot?.displayName || "未分配"}`,
-                    })) || []),
-                  ]}
-                />
-              </div>
+            {deviceId && (
+              <p className="flight-entry-filter-note">
+                已筛选所选设备的关联任务。
+              </p>
             )}
             {candidates.isPending && <p role="status">正在读取任务…</p>}
             {candidates.error && (
-              <>
+              <div className="flight-entry-load-error">
                 <p role="alert">{candidates.error.message}</p>
                 <Button small onClick={() => void candidates.refetch()}>
                   重新读取任务
                 </Button>
-              </>
+              </div>
+            )}
+            {queueItems.length > 0 && (
+              <div className="flight-entry-task-list">
+                {queueItems.map((item) => (
+                  <button
+                    type="button"
+                    key={item.taskId}
+                    className={`flight-entry-task-card ${selectedTask === item.taskId ? "selected" : ""}`}
+                    aria-label={`${item.context.task.title} · ${statusLabel(item.context.task.status)} · ${item.eligible ? "可进入" : "待完善"}`}
+                    aria-pressed={selectedTask === item.taskId}
+                    disabled={launching || !!activeCheck}
+                    onClick={() => {
+                      autoSelectionUsed.current = true;
+                      setSelectedTask(item.taskId);
+                      setChecksExpanded(false);
+                      setState({});
+                    }}
+                  >
+                    <span className="flight-entry-task-card-heading">
+                      <strong>{item.context.task.title}</strong>
+                      <span
+                        className={`flight-entry-task-dot ${item.eligible ? "eligible" : "blocked"}`}
+                        aria-label={item.eligible ? "可进入" : "待完善"}
+                      />
+                    </span>
+                    <span className="flight-entry-task-state">
+                      {statusLabel(item.context.task.status)}
+                      {item.eligible ? " · 可进入" : " · 待完善"}
+                    </span>
+                    <small>
+                      {dateTime(item.context.task.startAt)}–
+                      {dateTime(item.context.task.endAt)}
+                    </small>
+                    <small>
+                      设备：{item.context.device?.title || "未分配"} · 飞手：
+                      {item.context.pilot?.displayName || "未分配"}
+                    </small>
+                  </button>
+                ))}
+              </div>
             )}
             {candidates.data && candidates.data.total > 20 && (
               <div className="flight-entry-pagination">
                 <Button
                   small
-                  disabled={page === 1 || launching}
+                  disabled={page === 1 || launching || !!activeCheck}
                   onClick={() => setPage((value) => value - 1)}
                 >
                   上一页
@@ -737,16 +647,93 @@ export function EmbeddedFlight({
                 </span>
                 <Button
                   small
-                  disabled={page * 20 >= candidates.data.total || launching}
+                  disabled={
+                    page * 20 >= candidates.data.total || launching || !!activeCheck
+                  }
                   onClick={() => setPage((value) => value + 1)}
                 >
                   下一页
                 </Button>
               </div>
             )}
-            {selectedTask ? (
+            {!canRequest && (
+              <div className="flight-entry-unavailable">
+                <strong>尚无飞控入口业务权限</strong>
+                <p>
+                  请由平台管理员在权限管理中配置业务权限。进入飞控须以管理员、调度或飞手身份执行已放行任务。
+                </p>
+              </div>
+            )}
+            {activeCheck ? (
+              <section className="flight-entry-current" aria-label="当前放行任务">
+                <div className="flight-entry-summary-heading">
+                  <strong>
+                    <ShieldCheck size={14} />
+                    {activeCheck.context.task.title}
+                  </strong>
+                  <Button
+                    small
+                    aria-expanded={!collapsed}
+                    onClick={() => setCollapsed((value) => !value)}
+                  >
+                    {collapsed ? (
+                      <ChevronDown size={13} />
+                    ) : (
+                      <ChevronUp size={13} />
+                    )}
+                    {collapsed ? "展开任务信息" : "收起任务信息"}
+                  </Button>
+                </div>
+                <p className="flight-entry-active-brief">
+                  {activeCheck.context.device?.title || "执行设备"} ·{" "}
+                  {dateTime(activeCheck.context.task.startAt)} 至{" "}
+                  {dateTime(activeCheck.context.task.endAt)}
+                </p>
+                {!collapsed && (
+                  <>
+                    <TaskContext check={activeCheck} navigate={navigate} />
+                    <p className="muted">
+                      本平台审批用于入口业务放行；牍术内的设备切换与真实操作按牍术权限执行。
+                    </p>
+                  </>
+                )}
+                {activeWarning && (
+                  <p role="alert" className="flight-entry-warning">
+                    {activeWarning} 当前已打开的飞控继续保留，再次进入将重新检查。
+                  </p>
+                )}
+                {state.error && !configurationError && (
+                  <div className="flight-entry-active-actions">
+                    {state.loginRequired ? (
+                      <a
+                        className="button primary"
+                        href={fourALoginUrl({
+                          view: "flight",
+                          deviceId,
+                          taskId: activeCheck.taskId,
+                        })}
+                      >
+                        4A 统一登录
+                      </a>
+                    ) : (
+                      <Button
+                        onClick={() => {
+                          setActiveCheck(undefined);
+                          setState({});
+                          setLiveWarning("");
+                          void preflight.refetch();
+                        }}
+                      >
+                        <RefreshCw size={13} />
+                        重新检查任务
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </section>
+            ) : selectedTask ? (
               <div className="flight-entry-checks">
-                {preflight.isPending ? (
+                {configurationError ? null : preflight.isPending ? (
                   <p role="status">正在自动检查进入条件…</p>
                 ) : preflight.error ? (
                   <>
@@ -900,11 +887,6 @@ export function EmbeddedFlight({
                     </>
                   )
                 )}
-                {state.error && (
-                  <p role="alert" className="flight-entry-warning">
-                    {state.error}
-                  </p>
-                )}
                 {state.loginRequired && (
                   <a
                     className="button primary"
@@ -919,6 +901,8 @@ export function EmbeddedFlight({
                 )}
               </div>
             ) : (
+              !configurationError &&
+              canRequest &&
               !candidates.isPending &&
               !candidates.error && (
                 <div className="flight-entry-empty">
@@ -946,9 +930,58 @@ export function EmbeddedFlight({
                 </div>
               )
             )}
+            {notices.length > 0 && (
+              <p className="embedded-flight-notice" role="note">
+                {notices.join(" ")}
+              </p>
+            )}
           </div>
         </section>
-      )}
+        <main className="embedded-flight-main" aria-label="牍术飞控页面">
+          <div className="embedded-flight-stage">
+            {!error && state.url && (
+              <iframe
+                ref={frame}
+                title="牍术飞控操作区"
+                src={state.url}
+                referrerPolicy="no-referrer"
+                allow={
+                  !httpCompatibility &&
+                  window.isSecureContext &&
+                  options.capabilities?.microphone === true
+                    ? "fullscreen; autoplay; microphone"
+                    : "fullscreen; autoplay"
+                }
+                sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-pointer-lock allow-popups"
+                allowFullScreen
+                style={{ visibility: state.ready ? "visible" : "hidden" }}
+              />
+            )}
+            {!state.ready && (
+              <div className="embedded-flight-status" role="status">
+                <Empty
+                  loading={!error && !!activeCheck}
+                  title={
+                    error
+                      ? "飞控暂不可用"
+                      : activeCheck
+                        ? "正在进入飞控"
+                        : "任务画面"
+                  }
+                  description={
+                    error ||
+                    (activeCheck
+                      ? "正在建立飞控登录状态…"
+                      : selectedTask
+                        ? "完成任务检查并进入飞控后，页面将在这里显示。"
+                        : "从左侧选择一个执行任务，通过检查后即可进入飞控。")
+                  }
+                />
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

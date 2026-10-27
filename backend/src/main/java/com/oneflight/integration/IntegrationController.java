@@ -42,6 +42,10 @@ public class IntegrationController {
     public ApiResponse<Telemetry> telemetry(@PathVariable String id) {
         directory.require(id); return ApiResponse.ok(telemetry.current(id));
     }
+    @GetMapping("/weather/observations")
+    public ApiResponse<WeatherOverview> weatherObservations() {
+        return ApiResponse.ok(new WeatherOverview(telemetry.health(), directory.weatherObservations(telemetry)));
+    }
     @GetMapping("/devices/{id}/capabilities")
     public ApiResponse<Capabilities> capabilities(@PathVariable String id) {
         directory.require(id);

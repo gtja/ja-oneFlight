@@ -37,6 +37,7 @@ class WorkflowIntegrationTest {
     @Autowired ConsultationRepository consultations;
     @Autowired AuditEventRepository events;
     @Autowired AttachmentRepository attachments;
+    @Autowired AttachmentShareRequestRepository attachmentShareRequests;
     @Autowired PasswordEncoder encoder;
     String organizationId;
     String otherOrganizationId;
@@ -47,6 +48,7 @@ class WorkflowIntegrationTest {
 
     @BeforeEach
     void fixture() {
+        attachmentShareRequests.deleteAll();
         attachments.deleteAll();
         events.deleteAll();
         tasks.deleteAll();
@@ -275,14 +277,20 @@ class WorkflowIntegrationTest {
                         .getResponse()
                         .getContentAsString();
         id = json.readTree(body).path("data").path("id").asText();
-        for (String action : List.of("VERIFY", "RESOLVE"))
+        Map<String, String> caseActions = new LinkedHashMap<>();
+        caseActions.put("VERIFY", "PENDING_TRANSFER");
+        caseActions.put("TRANSFER", "PENDING_DISPOSAL");
+        caseActions.put("RESOLVE", "RESOLVED");
+        caseActions.put("ARCHIVE", "ARCHIVED");
+        for (var action : caseActions.entrySet())
             mvc.perform(
                             post("/api/v1/cases/" + id + "/actions")
                                     .with(user("department"))
                                     .with(csrf())
                                     .contentType("application/json")
-                                    .content("{\"action\":\"" + action + "\",\"note\":\"核实并已处理\"}"))
-                    .andExpect(status().isOk());
+                                    .content("{\"action\":\"" + action.getKey() + "\",\"note\":\"核实并已处理\",\"conclusion\":\"核实并已处理\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value(action.getValue()));
         assertThat(cases.findById(id).orElseThrow().status).isEqualTo("ARCHIVED");
         body =
                 mvc.perform(
@@ -314,6 +322,47 @@ class WorkflowIntegrationTest {
     }
 
     @Test
+    void caseEvidenceAppearsInUnifiedDataAssetsAndLinkedTaskMustMatchScope() throws Exception {
+        String taskId = createTask("林区火情来源任务");
+        String createBody = "{\"title\":\"西湖区林区烟点\",\"scene\":\"森林防火\",\"region\":\"杭州市\",\"organizationId\":\""
+                + organizationId
+                + "\",\"taskId\":\""
+                + taskId
+                + "\",\"description\":\"巡护发现疑似烟点\"}";
+        String caseBody = mvc.perform(
+                        post("/api/v1/cases")
+                                .with(user("department"))
+                                .with(csrf())
+                                .contentType("application/json")
+                                .content(createBody))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String caseId = json.readTree(caseBody).path("data").path("id").asText();
+        mvc.perform(
+                        post("/api/v1/cases")
+                                .with(user("admin"))
+                                .with(csrf())
+                                .contentType("application/json")
+                                .content(createBody.replace("\"region\":\"杭州市\"", "\"region\":\"西湖区\"")))
+                .andExpect(status().isBadRequest());
+
+        mvc.perform(
+                        multipart("/api/v1/attachments")
+                                .file(new MockMultipartFile("file", "fire-photo.jpg", "image/jpeg", new byte[] {1, 2, 3}))
+                                .param("caseId", caseId)
+                                .with(user("department"))
+                                .with(csrf()))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/attachments").with(user("department")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].caseId").value(caseId))
+                .andExpect(jsonPath("$.data.items[0].entityType").value("CASE"))
+                .andExpect(jsonPath("$.data.items[0].entityTitle").value("西湖区林区烟点"))
+                .andExpect(jsonPath("$.data.items[0].qualityStatus").value("PENDING_REVIEW"));
+    }
+
+    @Test
     void attachmentsRequireLinkedEntityAccess() throws Exception {
         String taskId = createTask("附件任务");
         MockMultipartFile file =
@@ -339,7 +388,136 @@ class WorkflowIntegrationTest {
         mvc.perform(get("/api/v1/attachments/" + id + "/content").with(user("department")))
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        mvc.perform(get("/api/v1/attachments/" + id + "/preview").with(user("department")))
+                .andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/attachments/" + id + "/content").with(user("outsider")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/attachments/" + id + "/preview").with(user("outsider")))
+                .andExpect(status().isForbidden());
+
+        byte[] pngHeader = new byte[] {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10, 0, 0, 0, 0};
+        String imageBody =
+                mvc.perform(
+                                multipart("/api/v1/attachments")
+                                        .file(new MockMultipartFile("file", "photo.png", "image/png", pngHeader))
+                                        .param("taskId", taskId)
+                                        .with(user("department"))
+                                        .with(csrf()))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        String imageId = json.readTree(imageBody).path("data").path("id").asText();
+        mvc.perform(get("/api/v1/attachments/" + imageId + "/preview").with(user("department")))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("image/png"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("inline")))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+    }
+
+    @Test
+    void attachmentQualityAndArchiveTransitionsAreScopedAndAudited() throws Exception {
+        String taskId = createTask("成果质检任务");
+        String upload = mvc.perform(
+                        multipart("/api/v1/attachments")
+                                .file(new MockMultipartFile("file", "result.txt", "text/plain", "成果".getBytes()))
+                                .param("taskId", taskId)
+                                .with(user("department"))
+                                .with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.qualityStatus").value("PENDING_REVIEW"))
+                .andReturn().getResponse().getContentAsString();
+        String attachmentId = json.readTree(upload).path("data").path("id").asText();
+
+        mvc.perform(patch("/api/v1/attachments/" + attachmentId + "/quality")
+                        .with(user("department"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("{\"decision\":\"PASSED\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(patch("/api/v1/attachments/" + attachmentId + "/quality")
+                        .with(user("admin"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("{\"decision\":\"NEEDS_SUPPLEMENT\",\"note\":\"请补充拍摄时间\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.qualityStatus").value("NEEDS_SUPPLEMENT"))
+                .andExpect(jsonPath("$.data.qualityNote").value("请补充拍摄时间"));
+        mvc.perform(post("/api/v1/attachments/" + attachmentId + "/archive")
+                        .with(user("dispatch"))
+                        .with(csrf()))
+                .andExpect(status().isBadRequest());
+        mvc.perform(patch("/api/v1/attachments/" + attachmentId + "/quality")
+                        .with(user("admin"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("{\"decision\":\"PASSED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.qualityStatus").value("PASSED"));
+        mvc.perform(post("/api/v1/attachments/" + attachmentId + "/archive")
+                        .with(user("dispatch"))
+                        .with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ARCHIVED"));
+        assertThat(events.findAll().stream()
+                .filter(event -> "ATTACHMENT".equals(event.entityType)
+                        && attachmentId.equals(event.entityId))
+                .map(event -> event.action)
+                .toList())
+                .contains("NEEDS_SUPPLEMENT", "PASSED", "ARCHIVE");
+    }
+
+    @Test
+    void approvedAttachmentSharingGrantsOnlySelectedFilesForLimitedTime() throws Exception {
+        String taskId = createTask("共享成果任务");
+        String upload = mvc.perform(
+                        multipart("/api/v1/attachments")
+                                .file(new MockMultipartFile("file", "shared-result.txt", "text/plain", "待共享成果".getBytes()))
+                                .param("taskId", taskId)
+                                .with(user("department"))
+                                .with(csrf()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String attachmentId = json.readTree(upload).path("data").path("id").asText();
+        String expiresAt = java.time.Instant.now().plus(java.time.Duration.ofDays(7)).toString();
+        String requestBody = "{\"attachmentIds\":[\"" + attachmentId
+                + "\"],\"targetOrganizationId\":\"" + otherOrganizationId
+                + "\",\"purpose\":\"跨部门联合核查\",\"expiresAt\":\"" + expiresAt + "\"}";
+        String request = mvc.perform(post("/api/v1/attachments/share-requests")
+                        .with(user("admin"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content(requestBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.attachmentCount").value(1))
+                .andReturn().getResponse().getContentAsString();
+        String requestId = json.readTree(request).path("data").path("id").asText();
+
+        mvc.perform(get("/api/v1/attachments").with(user("outsider")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
+        mvc.perform(get("/api/v1/attachments/" + attachmentId + "/content").with(user("outsider")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/tasks/" + taskId).with(user("outsider")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/attachments/share-requests/" + requestId + "/actions")
+                        .with(user("dispatch"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("{\"action\":\"APPROVE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("APPROVED"));
+        mvc.perform(get("/api/v1/attachments").with(user("outsider")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].shared").value(true))
+                .andExpect(jsonPath("$.data.items[0].entityId").doesNotExist())
+                .andExpect(jsonPath("$.data.items[0].taskId").doesNotExist());
+        mvc.perform(get("/api/v1/attachments/" + attachmentId + "/content").with(user("outsider")))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes("待共享成果".getBytes()));
+        mvc.perform(get("/api/v1/tasks/" + taskId).with(user("outsider")))
                 .andExpect(status().isForbidden());
     }
 
@@ -757,7 +935,7 @@ class WorkflowIntegrationTest {
     }
 
     @Test
-    void resolvingArchivesWithHumanConclusionAndKeepsLegacyArchiveCompatibility() throws Exception {
+    void resolvingRequiresReviewBeforeArchiveAndKeepsLegacyArchiveCompatibility() throws Exception {
         IndustryCase current = new IndustryCase();
         current.title = "待处置线索";
         current.scene = "森林防火";
@@ -773,7 +951,7 @@ class WorkflowIntegrationTest {
                                 .content(
                                         "{\"action\":\"RESOLVE\",\"conclusion\":\"现场已处理并确认无持续风险\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("ARCHIVED"))
+                .andExpect(jsonPath("$.data.status").value("RESOLVED"))
                 .andExpect(jsonPath("$.data.conclusion").value("现场已处理并确认无持续风险"));
         assertThat(
                         events.findAll().stream()
@@ -791,7 +969,8 @@ class WorkflowIntegrationTest {
                                 .with(csrf())
                                 .contentType("application/json")
                                 .content("{\"action\":\"ARCHIVE\"}"))
-                .andExpect(status().isConflict());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ARCHIVED"));
         IndustryCase legacy = new IndustryCase();
         legacy.title = "历史已处置线索";
         legacy.organizationId = organizationId;

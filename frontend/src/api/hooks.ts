@@ -56,11 +56,13 @@ export function useCatalog(
   path: string,
   params: Record<string, unknown> = {},
   enabled = true,
+  interval?: number,
 ) {
   const result = useQuery({
     queryKey: ["catalog", path, queryString(params)],
     queryFn: () => readCatalog(path, params),
     enabled,
+    refetchInterval: interval,
   });
   return { ...result, data: result.isError ? undefined : result.data };
 }

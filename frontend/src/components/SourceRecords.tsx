@@ -3,6 +3,7 @@ import { entityName, useList, type Entity } from "../api";
 import { dateTime } from "../domain";
 import { DataTable, Details, ListFooter, Modal, SearchBox, Select } from "./UI";
 import SourceRoutePreview from "./SourceRoutePreview";
+import { resourceValueLabel } from "../pages/resources/details";
 
 const fieldNames: Record<string, string> = {
   title: "名称",
@@ -136,12 +137,15 @@ export default function SourceRecords({
           {
             key: "sourceSystem",
             label: "来源系统",
-            render: (r) => String(r.sourceSystem || r.system || "来源库"),
+            render: (r) => {
+              const source = String(r.sourceSystem || r.system || "来源库");
+              return ({ "ja-4a": "4A 身份系统", dushu: "牍术飞控" } as Record<string, string>)[source.toLowerCase()] || source;
+            },
           },
           {
             key: "sourceStatus",
             label: kind === "people" ? "4A 账号状态" : "来源状态",
-            render: (r) => String(r.sourceStatus || "未知"),
+            render: (r) => resourceValueLabel(String(r.sourceStatus || "UNKNOWN")),
           },
           {
             key:
@@ -209,7 +213,7 @@ export default function SourceRecords({
                         ? dateTime(val)
                         : typeof val === "object"
                           ? JSON.stringify(val)
-                          : String(val),
+                          : resourceValueLabel(String(val)),
               }))}
           />
           <p className="footnote">

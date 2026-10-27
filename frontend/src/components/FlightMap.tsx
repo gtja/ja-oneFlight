@@ -56,6 +56,7 @@ import {
   Box,
   Route as RouteIcon,
   Hexagon,
+  CloudSun,
 } from "lucide-react";
 import { useData, type Entity } from "../api";
 const imagery =
@@ -141,6 +142,7 @@ const markerIcons = {
   UNKNOWN: Box,
   ROUTE: RouteIcon,
   AIRSPACE: Hexagon,
+  WEATHER: CloudSun,
 };
 export type AreaFocusRequest = {
   location: MapObjectLocation | null;
@@ -1004,6 +1006,8 @@ export default function FlightMap({
         ? kind === "ROUTE"
           ? "ROUTE"
           : "AIRSPACE"
+        : kind === "WEATHER"
+          ? "WEATHER"
         : presentation.category;
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("viewBox", "0 0 24 24");
@@ -1027,6 +1031,12 @@ export default function FlightMap({
     };
     for (const entity of objects) {
       if (entity.kind === "AIRSPACE" || entity.kind === "ROUTE") continue;
+      if (entity.kind === "WEATHER") {
+        if (layers.weather === false) continue;
+        const point = coordinates(entity);
+        if (point) addMarker(entity, point, "WEATHER");
+        continue;
+      }
       const presentation = resolveDevicePresentation(entity);
       const point = coordinates(entity);
       if (!point) continue;

@@ -33,6 +33,7 @@ export function Status({ status, label }: { status?: string; label?: string }) {
             "RETURNED",
             "MAINTENANCE",
             "PENDING_REVIEW",
+            "PENDING_TRANSFER",
             "PENDING_DISPOSAL",
             "STALE",
           ].includes(status || "")

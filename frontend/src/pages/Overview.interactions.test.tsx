@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -12,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Entity, Page } from "../api";
 import Overview from "./Overview";
 
+const mapObjects = vi.hoisted(() => vi.fn<(objects: Entity[]) => void>());
+
 // Keep real queries and detail panels; map rendering is covered separately.
 vi.mock("../components/FlightMap", () => ({
   default: ({
@@ -20,19 +23,22 @@ vi.mock("../components/FlightMap", () => ({
   }: {
     objects: Entity[];
     onSelect: (entity: Entity) => void;
-  }) => (
-    <div aria-label="飞行地图">
-      {objects.map((item) => (
-        <button
-          key={item.id}
-          aria-label={`地图选择 ${item.id}`}
-          onClick={() => onSelect(item)}
-        >
-          {item.name || item.title}
-        </button>
-      ))}
-    </div>
-  ),
+  }) => {
+    mapObjects(objects);
+    return (
+      <div aria-label="飞行地图">
+        {objects.map((item) => (
+          <button
+            key={item.id}
+            aria-label={`地图选择 ${item.id}`}
+            onClick={() => onSelect(item)}
+          >
+            {item.name || item.title}
+          </button>
+        ))}
+      </div>
+    );
+  },
 }));
 
 const sourceDevices: Entity[] = [
@@ -122,9 +128,17 @@ afterEach(() => {
   clients.forEach((client) => client.clear());
   clients.length = 0;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+  mapObjects.mockClear();
 });
 
-function renderOverview({ tasks = [] }: { tasks?: Entity[] } = {}) {
+function renderOverview({
+  tasks = [],
+  resourceItems = () => resources,
+}: {
+  tasks?: Entity[];
+  resourceItems?: () => Entity[];
+} = {}) {
   const requests: URL[] = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://localhost");
@@ -134,8 +148,13 @@ function renderOverview({ tasks = [] }: { tasks?: Entity[] } = {}) {
         return response({ executingTasks: 0, openCases: 0, resourcesCount: 5 });
       case "/api/v1/devices":
         return response(page(sourceDevices));
+      case "/api/v1/weather/observations":
+        return response({
+          sourceHealth: { name: "机巢遥测", state: "HEALTHY" },
+          stations: [],
+        });
       case "/api/v1/resources":
-        return response(page(resources));
+        return response(page(resourceItems()));
       case "/api/v1/cases":
         return response(page([]));
       case "/api/v1/tasks":
@@ -194,6 +213,99 @@ function deviceRequests(requests: URL[]) {
 }
 
 describe("态势感知对象详情的来源边界", () => {
+  it("没有机巢气象观测时，切换地图图层会说明当前原因", async () => {
+    renderOverview();
+    expect(await screen.findByText("暂无机巢上报风速、温度或湿度")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "机巢气象" }));
+    expect(
+      screen.getByRole("status").textContent,
+    ).toContain("当前没有机巢上报风速、温度或湿度");
+  });
+
+  it("资源目录失效后同步空域几何和已打开的详情，删除后不保留旧档案", async () => {
+    const original: Entity = {
+      ...localObjects[1],
+      metadata: {
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [[120, 30], [120.01, 30], [120.01, 30.01], [120, 30]],
+          ],
+        },
+      },
+    };
+    let current = [original];
+    const { client } = renderOverview({ resourceItems: () => current });
+    fireEvent.click(
+      await screen.findByRole("button", { name: `地图选择 ${original.id}` }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: String(original.title) }),
+    ).toBeTruthy();
+    const updated: Entity = {
+      ...original,
+      title: "更新后的保护空域",
+      status: "PENDING_CONFIRMATION",
+      metadata: {
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [[120.1, 30.1], [120.2, 30.1], [120.2, 30.2], [120.1, 30.1]],
+          ],
+        },
+      },
+    };
+    current = [updated];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["catalog", "/resources"] });
+    });
+    await waitFor(() =>
+      expect(
+        mapObjects.mock.calls.at(-1)?.[0].find((item) => item.id === updated.id),
+      ).toEqual(updated),
+    );
+    const dialog = screen.getByRole("dialog", { name: String(updated.title) });
+    expect(within(dialog).getByText("待确认")).toBeTruthy();
+
+    current = [];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["catalog", "/resources"] });
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      screen.queryByRole("button", { name: `地图选择 ${original.id}` }),
+    ).toBeNull();
+  });
+
+  it("每30秒刷新空域目录，继续按当前区域过滤新增及变更档案", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let current = [localObjects[1]];
+    const { client, requests } = renderOverview({ resourceItems: () => current });
+    await screen.findByRole("button", { name: `地图选择 ${localObjects[1].id}` });
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    fireEvent.click(screen.getByRole("combobox", { name: "指挥区域" }));
+    fireEvent.click(screen.getByRole("option", { name: "余杭区" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: `地图选择 ${localObjects[1].id}` }),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    current = [
+      { ...localObjects[1], title: "其他区域空域", region: "上城区" },
+      { ...localObjects[1], id: "new-airspace", title: "新登记空域" },
+    ];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    await screen.findByRole("button", { name: "地图选择 new-airspace" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: `地图选择 ${localObjects[1].id}` }),
+    ).toBeNull();
+    expect(
+      requests.filter((url) => url.pathname === "/api/v1/resources"),
+    ).toHaveLength(2);
+  });
+
   it("执行任务入口传递任务编号，由管控页解析对应来源设备", async () => {
     const task: Entity = {
       id: "task-river-patrol",

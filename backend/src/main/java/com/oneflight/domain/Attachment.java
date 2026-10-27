@@ -36,6 +36,24 @@ public class Attachment {
     public long size;
     public Instant createdAt = Instant.now();
 
+    @Column(name = "quality_status", nullable = false, length = 32)
+    public String qualityStatus = "PENDING_REVIEW";
+
+    @Column(name = "quality_note", length = 2000)
+    public String qualityNote;
+
+    @Column(name = "reviewed_by", length = 36)
+    public String reviewedBy;
+
+    @Column(name = "reviewed_at")
+    public Instant reviewedAt;
+
+    @Column(name = "archived_by", length = 36)
+    public String archivedBy;
+
+    @Column(name = "archived_at")
+    public Instant archivedAt;
+
     public Map<String, Object> view() {
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("id", id);
@@ -49,6 +67,10 @@ public class Attachment {
         fields.put("contentType", contentType);
         fields.put("size", size);
         fields.put("createdAt", createdAt);
+        fields.put("qualityStatus", qualityStatus);
+        fields.put("qualityNote", qualityNote);
+        fields.put("reviewedAt", reviewedAt);
+        fields.put("archivedAt", archivedAt);
         fields.put("downloadUrl", "/api/v1/attachments/" + id + "/content");
         return fields;
     }

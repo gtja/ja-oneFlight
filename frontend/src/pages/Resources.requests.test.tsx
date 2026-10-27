@@ -55,6 +55,7 @@ async function start(
   } = {},
 ) {
   const requests: URL[] = [];
+  const navigate = vi.fn();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string) => {
@@ -86,6 +87,35 @@ async function start(
         return envelope([
           { id: "device-1", name: "合成设备", type: "UAV", status: "ONLINE" },
         ]);
+      if (url.pathname === "/api/v1/attachments")
+        return envelope([
+          { id: "photo-id", title: "photo.png", fileName: "photo.png", contentType: "image/png" },
+          { id: "document-id", title: "report.pdf", fileName: "report.pdf", contentType: "application/pdf" },
+        ]);
+      if (url.pathname === "/api/v1/flights")
+        return envelope([
+          { id: "flight-id", title: "真实架次", deviceId: "source-device-1", sortieNo: "真实架次" },
+        ]);
+      if (url.pathname === "/api/v1/weather/observations")
+        return new Response(
+          JSON.stringify({
+            code: "SUCCESS",
+            data: {
+              sourceHealth: { name: "实时遥测", state: "HEALTHY" },
+              stations: [
+                {
+                  deviceId: "dock-1",
+                  deviceName: "测试机巢",
+                  status: "ONLINE",
+                  observedAt: "2026-10-26T05:00:00Z",
+                  windSpeed: 3.2,
+                  temperature: 24,
+                  humidity: 60,
+                },
+              ],
+            },
+          }),
+        );
       if (url.pathname.startsWith("/api/v1/source-data/")) {
         const kind = url.pathname.split("/").at(-1)!;
         return envelope([{ id: `${kind}-1`, title: `${kind}来源记录` }]);
@@ -103,19 +133,65 @@ async function start(
   render(
     <QueryClientProvider client={client}>
       <UserContext.Provider value={user}>
-        <Resources />
+        <Resources navigate={navigate} />
       </UserContext.Provider>
     </QueryClientProvider>,
   );
   await flush();
   expect(client.isFetching()).toBe(0);
-  return { requests, client };
+  return { requests, client, navigate };
 }
 function requestsFor(requests: URL[], pathname: string) {
   return requests.filter((url) => url.pathname === pathname);
 }
 
 describe("资源目录按需请求", () => {
+  it("打开气象资源时读取机巢实时观测并显示遥测来源状态", async () => {
+    const { requests } = await start();
+    fireEvent.click(screen.getByRole("button", { name: "气象资源" }));
+    await flush();
+    expect(screen.getByRole("main", { name: "气象资源" })).toBeTruthy();
+    expect(screen.getByText("机库遥测已连接")).toBeTruthy();
+    expect(screen.getByText("测试机巢")).toBeTruthy();
+    expect(screen.getByText("3.2 米/秒")).toBeTruthy();
+    expect(
+      requestsFor(requests, "/api/v1/weather/observations").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("成果照片可预览、其他文件仍可下载，并带设备筛选进入飞控任务放行流程", async () => {
+    const { navigate } = await start();
+    fireEvent.click(screen.getByRole("button", { name: "数据成果" }));
+    await flush();
+    expect(screen.getByText("photo.png")).toBeTruthy();
+    fireEvent.click(screen.getByText("photo.png"));
+    const photoDialog = screen.getByRole("dialog", { name: "photo.png" });
+    expect(within(photoDialog).getByRole("img", { name: "photo.png" }).getAttribute("src"))
+      .toBe("/api/v1/attachments/photo-id/preview");
+    expect(within(photoDialog).getByRole("link", { name: "下载文件" }).getAttribute("href"))
+      .toBe("/api/v1/attachments/photo-id/download");
+    fireEvent.click(within(photoDialog).getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByText("report.pdf"));
+    await flush();
+    const documentDialog = screen.getByRole("dialog", { name: "report.pdf" });
+    expect(within(documentDialog).queryByRole("img")).toBeNull();
+    expect(within(documentDialog).getByText("该文件类型不支持在线预览，可下载查看。"))
+      .toBeTruthy();
+    expect(within(documentDialog).getByRole("link", { name: "下载文件" }).getAttribute("href"))
+      .toBe("/api/v1/attachments/document-id/download");
+    fireEvent.click(within(documentDialog).getByRole("button", { name: "关闭" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "飞行记录" }));
+    await flush();
+    expect(screen.getByText("真实架次")).toBeTruthy();
+    fireEvent.click(screen.getByText("真实架次"));
+    const flightDialog = screen.getByRole("dialog", { name: /真实架次/ });
+    fireEvent.click(
+      within(flightDialog).getByRole("button", { name: /进入牍术飞控/ }),
+    );
+    expect(navigate).toHaveBeenCalledWith("flight", { deviceId: "source-device-1" });
+  });
+
   it("浏览人员和航线来源时不读取组织，也不继续设备轮询", async () => {
     const { requests } = await start();
     expect(requestsFor(requests, "/api/v1/organizations")).toHaveLength(0);
@@ -183,7 +259,7 @@ describe("资源目录按需请求", () => {
 
   it("批量导入打开后仍加载完整组织选择，不预先请求", async () => {
     const { requests } = await start();
-    fireEvent.click(screen.getByRole("button", { name: "空域资源" }));
+    fireEvent.click(screen.getByRole("button", { name: "空域底数" }));
     await flush();
     fireEvent.click(screen.getByRole("button", { name: "本地业务档案" }));
     await flush();

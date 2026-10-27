@@ -6,10 +6,11 @@ export const resourceKinds: Record<string, string> = {
   DEVICE: "设备资源",
   PERSON: "人员资源",
   ROUTE: "航线资源",
-  AIRSPACE: "空域资源",
+  AIRSPACE: "空域底数",
   MAINTENANCE: "设备维护",
   FLIGHT: "飞行记录",
-  MEDIA: "成果媒体",
+  MEDIA: "数据成果",
+  WEATHER: "气象资源",
 };
 export const sourceCatalogs: Record<string, string> = {
   PERSON: "people",

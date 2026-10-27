@@ -21,6 +21,10 @@ public final class SourceModels {
                     altitudeMeters, batteryPercent, windSpeed, temperature, humidity, taskStatus);
         }
     }
+    public record WeatherObservation(String deviceId, String deviceName, String status, Instant observedAt,
+            Instant receivedAt, Double windSpeed, Double temperature, Double humidity,
+            Double longitude, Double latitude) { }
+    public record WeatherOverview(SourceHealth sourceHealth, List<WeatherObservation> stations) { }
     public record Capabilities(String deviceId, Map<String, Boolean> capabilities, String message) { }
     public record Flight(String id, String deviceId, String productKey, String sortieNo,
             Long flightTimeSeconds, Double flightDistanceMeters, Instant reportedAt, Instant updatedAt,

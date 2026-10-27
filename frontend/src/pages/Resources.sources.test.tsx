@@ -151,7 +151,7 @@ describe("source and local business resource catalogs", () => {
   );
   it.each([
     ["航线资源", "来源航线模板", "routes"],
-    ["空域资源", "来源电子围栏", "airspaces"],
+    ["空域底数", "来源电子围栏", "airspaces"],
   ])(
     "keeps %s source data visible even when there are no local business archives",
     async (navigation, title, source) => {

@@ -166,6 +166,8 @@ export default function App() {
     if (context.deviceId) next.deviceId = context.deviceId;
     if (context.taskId) next.taskId = context.taskId;
     if (context.planId) next.planId = context.planId;
+    if (context.resourceKind) next.resourceKind = context.resourceKind;
+    if (context.resourceSearch) next.resourceSearch = context.resourceSearch;
     if (context.action) next.action = context.action;
     setParams(next);
     setBoard(false);
@@ -389,11 +391,16 @@ export default function App() {
                 initialAction={params.get("action") || undefined}
               />
             ) : view === "resources" ? (
-              <Resources navigate={navigate} />
+              <Resources
+                key={`${params.get("resourceKind") || "default"}:${params.get("resourceSearch") || ""}`}
+                navigate={navigate}
+                initialKind={params.get("resourceKind") || undefined}
+                initialSearch={params.get("resourceSearch") || undefined}
+              />
             ) : view === "algorithms" ? (
               <Algorithms />
             ) : (
-              <Scenes />
+            <Scenes navigate={navigate} />
             )}
           </main>
           {settings && (

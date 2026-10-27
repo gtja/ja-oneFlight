@@ -141,11 +141,7 @@ function start(
   };
 }
 async function confirmEntry() {
-  const select = await screen.findByRole("combobox", { name: "执行任务" });
-  fireEvent.click(select);
-  fireEvent.click(
-    await screen.findByRole("option", { name: /机场巡检 · 待执行/ }),
-  );
+  await screen.findByRole("button", { name: /机场巡检 · 待执行/ });
   const confirm = await screen.findByRole("button", {
     name: "进入飞控",
   });
@@ -174,7 +170,7 @@ describe("application authentication integration", () => {
     const secondUser = { ...baseUser, id: "local-B", username: "second" };
     setUser(secondUser);
     act(() => client.setQueryData(["current-user"], secondUser));
-    await screen.findByRole("combobox", { name: "执行任务" });
+    await screen.findByRole("button", { name: /机场巡检 · 待执行/ });
     expect(screen.queryByTitle("牍术飞控操作区")).toBeNull();
     expect(
       request.mock.calls.filter(([url]) =>

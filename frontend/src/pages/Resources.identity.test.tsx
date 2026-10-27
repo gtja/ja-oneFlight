@@ -163,7 +163,7 @@ async function openArchive(item = binding) {
   else {
     fireEvent.click(
       screen.getByRole("button", {
-        name: item.kind === "ROUTE" ? "航线资源" : "空域资源",
+        name: item.kind === "ROUTE" ? "航线资源" : "空域底数",
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: "本地业务档案" }));
@@ -314,4 +314,16 @@ describe("资源详情的来源设备身份", () => {
       expect(deviceRequests(requests)).toEqual([]);
     },
   );
+
+  it("空域清单保留缺少有效边界的记录并明确提示", async () => {
+    const { client } = renderResources();
+    fireEvent.click(screen.getByRole("button", { name: "空域底数" }));
+    fireEvent.click(screen.getByRole("button", { name: "本地业务档案" }));
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(screen.getByLabelText("空域资源地图")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "1 条记录缺少有效边界，已保留在清单中。",
+    );
+    expect(screen.getByRole("button", { name: /本地空域/ })).toBeTruthy();
+  });
 });

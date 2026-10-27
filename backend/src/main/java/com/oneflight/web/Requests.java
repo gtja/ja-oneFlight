@@ -122,4 +122,18 @@ public final class Requests {
             @Size(max = 8000) String reply) {}
 
     public record SettingInput(@NotNull @Size(max = 8000) String value) {}
+
+    public record AttachmentQualityInput(
+            @NotBlank @Pattern(regexp = "PASSED|NEEDS_SUPPLEMENT") String decision,
+            @Size(max = 2000) String note) {}
+
+    public record AttachmentShareRequestInput(
+            @NotEmpty @Size(max = 100) Set<@NotBlank String> attachmentIds,
+            @NotBlank @Size(max = 36) String targetOrganizationId,
+            @NotBlank @Size(min = 5, max = 2000) String purpose,
+            @NotNull Instant expiresAt) {}
+
+    public record AttachmentShareDecisionInput(
+            @NotBlank @Pattern(regexp = "APPROVE|REJECT") String action,
+            @Size(max = 2000) String note) {}
 }

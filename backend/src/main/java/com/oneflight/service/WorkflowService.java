@@ -187,8 +187,8 @@ public class WorkflowService {
         if (a.note() == null || a.note().isBlank()) throw ApiException.invalid("请填写办理说明");
     }
 
-    private void linkTask(String id) {
-        if (id != null && !id.isBlank()) get(tasks, id);
+    private Task linkTask(String id) {
+        return id == null || id.isBlank() ? null : get(tasks, id);
     }
 
     private void linkResource(String id) {
@@ -609,8 +609,12 @@ public class WorkflowService {
         IndustryCase c = id == null ? new IndustryCase() : get(cases, id);
         if (id == null)
             initialize(c, in.title(), in.region(), in.organizationId(), "PENDING_REVIEW");
-        else expect(c, "PENDING_REVIEW", "PENDING_DISPOSAL");
-        linkTask(in.taskId());
+        else expect(c, "PENDING_REVIEW", "PENDING_TRANSFER", "PENDING_DISPOSAL");
+        Task sourceTask = linkTask(in.taskId());
+        if (sourceTask != null
+                && (!Objects.equals(sourceTask.organizationId, c.organizationId)
+                        || !Objects.equals(sourceTask.region, in.region())))
+            throw ApiException.invalid("线索与来源任务必须属于同一组织和区域");
         c.title = in.title();
         c.region = in.region();
         scope.requireAccess(c);
@@ -630,8 +634,14 @@ public class WorkflowService {
         switch (a.action()) {
             case "VERIFY" -> {
                 expect(c, "PENDING_REVIEW");
+                if (a.conclusion() == null || a.conclusion().isBlank())
+                    throw ApiException.invalid("请填写复核结论");
+                c.status = "PENDING_TRANSFER";
+                c.conclusion = a.conclusion().trim();
+            }
+            case "TRANSFER" -> {
+                expect(c, "PENDING_TRANSFER");
                 c.status = "PENDING_DISPOSAL";
-                if (a.conclusion() != null) c.conclusion = a.conclusion();
             }
             case "DISMISS" -> {
                 expect(c, "PENDING_REVIEW");
@@ -641,7 +651,7 @@ public class WorkflowService {
                                 : a.conclusion();
                 if (conclusion == null || conclusion.isBlank())
                     throw ApiException.invalid("请填写处理结论");
-                c.conclusion = conclusion;
+                c.conclusion = conclusion.trim();
                 c.status = "ARCHIVED";
             }
             case "RESOLVE" -> {
@@ -652,8 +662,8 @@ public class WorkflowService {
                                 : a.conclusion();
                 if (conclusion == null || conclusion.isBlank())
                     throw ApiException.invalid("请填写处理结论");
-                c.conclusion = conclusion;
-                c.status = "ARCHIVED";
+                c.conclusion = conclusion.trim();
+                c.status = "RESOLVED";
             }
             case "ARCHIVE" -> {
                 expect(c, "RESOLVED");

@@ -78,7 +78,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("任务日历的上海日期与源顺序", () => {
+describe("任务日历的上海日期与排期视图", () => {
   it("需求助手只向可提报角色显示", () => {
     start();
     expect(screen.getByRole("button", { name: "需求助手" })).toBeTruthy();
@@ -91,7 +91,7 @@ describe("任务日历的上海日期与源顺序", () => {
     expect(screen.queryByRole("button", { name: "需求助手" })).toBeNull();
     expect(screen.queryByRole("button", { name: "提报需求" })).toBeNull();
   });
-  it("按上海跨日分组，保持同日源顺序，隐藏未排期及七天范围之外的任务", () => {
+  it("按上海日期显示整月排期，未排期任务不进入日历", () => {
     fixtures.tasks = [
       task("今天第一条", "2026-10-22T15:00:00Z"),
       task("明天第一条", "2026-10-22T16:00:00Z"),
@@ -103,30 +103,55 @@ describe("任务日历的上海日期与源顺序", () => {
     expect(screen.getByText("未排期", { selector: "strong" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "日历" }));
 
-    const days = document.querySelectorAll<HTMLElement>(".calendar-day");
-    expect(days).toHaveLength(7);
+    const days = document.querySelectorAll<HTMLElement>(".task-month-cell");
+    expect(days).toHaveLength(35);
+    expect(screen.getByText("2026 / 10")).toBeTruthy();
+    const day22 = screen
+      .getByRole("button", { name: "2026-10-22" })
+      .closest(".task-month-cell");
+    const day23 = screen
+      .getByRole("button", { name: "2026-10-23" })
+      .closest(".task-month-cell");
+    const day29 = screen
+      .getByRole("button", { name: "2026-10-29" })
+      .closest(".task-month-cell");
     expect(
       Array.from(
-        days[0].querySelectorAll(".calendar-task strong"),
+        day22?.querySelectorAll(".task-month-event strong") || [],
         (item) => item.textContent,
       ),
-    ).toEqual(["今天第一条", "今天第二条"]);
-    expect(within(days[1]).getByText("明天第一条")).toBeTruthy();
+    ).toEqual(["今天第二条", "今天第一条"]);
+    expect(
+      within(day23 as HTMLElement).getByText("明天第一条"),
+    ).toBeTruthy();
+    expect(
+      within(day29 as HTMLElement).getByText("七天之外"),
+    ).toBeTruthy();
     expect(screen.queryByText("未排期")).toBeNull();
-    expect(screen.queryByText("七天之外")).toBeNull();
 
     fireEvent.click(
-      within(days[0]).getByRole("button", { name: /今天第一条/ }),
+      screen.getByRole("button", { name: /今天第一条/ }),
     );
     expect(screen.getByRole("dialog", { name: "今天第一条" })).toBeTruthy();
     expect(fixtures.write).not.toHaveBeenCalled();
   });
 
-  it("空队列保留七天网格和原有空数据提示", () => {
+  it("空队列保留完整月历网格", () => {
     start();
     fireEvent.click(screen.getByRole("button", { name: "日历" }));
-    expect(document.querySelectorAll(".calendar-day")).toHaveLength(7);
-    expect(screen.getByText("本周暂无已排期任务")).toBeTruthy();
+    expect(document.querySelectorAll(".task-month-cell")).toHaveLength(35);
+    expect(document.querySelectorAll(".task-month-event")).toHaveLength(0);
     expect(fixtures.write).not.toHaveBeenCalled();
+  });
+
+  it("支持按日期切换资源周排期和日排期时窗", () => {
+    start();
+    fireEvent.click(screen.getByRole("button", { name: "日历" }));
+    fireEvent.click(screen.getByRole("button", { name: "资源周排期" }));
+    expect(screen.getByText("2026-10-19 — 2026-10-25")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "资源日排期" }));
+    expect(screen.getByText("显示时间 07:00—18:00")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "全天24小时" }));
+    expect(screen.getByText("显示时间 00:00—24:00")).toBeTruthy();
   });
 });

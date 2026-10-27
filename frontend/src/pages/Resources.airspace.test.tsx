@@ -185,7 +185,7 @@ function setup(role = user.role) {
 describe("空域导入与资源编辑衔接", () => {
   it("导入后刷新本地档案，编辑保存metadata高度且完整保留内环和来源额外维度", async () => {
     const { saved, feedback } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "空域资源" }));
+    fireEvent.click(screen.getByRole("button", { name: "空域底数" }));
     fireEvent.click(screen.getByRole("button", { name: "本地业务档案" }));
     await waitFor(() => expect(client.isFetching()).toBe(0));
     fireEvent.click(screen.getByRole("button", { name: "批量导入" }));
@@ -211,11 +211,13 @@ describe("空域导入与资源编辑衔接", () => {
       expect(screen.queryByRole("dialog", { name: "批量导入空域" })).toBeNull(),
     );
     expect(feedback).toHaveBeenCalledWith("空域导入完成：新增 1 条，跳过 0 条");
+    expect(screen.getByLabelText("空域资源地图")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /导入的合成空域/ })).toBeTruthy();
     fireEvent.click(
       await screen.findByText("导入的合成空域", { selector: "strong" }),
     );
     expect(
-      screen.getByLabelText("合成空域地图").getAttribute("data-projection"),
+      screen.getAllByLabelText("合成空域地图").at(-1)?.getAttribute("data-projection"),
     ).toBe("planar");
     fireEvent.click(screen.getByRole("button", { name: "编辑档案" }));
     expect(maps.drawing?.innerRings).toEqual([
@@ -252,7 +254,7 @@ describe("空域导入与资源编辑衔接", () => {
   });
   it("部门用户没有批量导入入口", async () => {
     setup("DEPARTMENT");
-    fireEvent.click(screen.getByRole("button", { name: "空域资源" }));
+    fireEvent.click(screen.getByRole("button", { name: "空域底数" }));
     await waitFor(() => expect(client.isFetching()).toBe(0));
     expect(screen.queryByRole("button", { name: "批量导入" })).toBeNull();
   });

@@ -5,11 +5,13 @@ import useTaskRequestSubmission from "./useTaskRequestSubmission";
 export default function TaskRequestForm({
   fields,
   organizationId,
+  initialPriority = "NORMAL",
   onClose,
   onBusyChange,
 }: {
   fields: Field[];
   organizationId: string;
+  initialPriority?: "NORMAL" | "URGENT";
   onClose: () => void;
   onBusyChange: (busy: boolean) => void;
 }) {
@@ -23,7 +25,7 @@ export default function TaskRequestForm({
       )}
       <EntityForm
         fields={fields}
-        initial={{ priority: "NORMAL", scene: SCENES[0], organizationId }}
+        initial={{ priority: initialPriority, scene: SCENES[0], organizationId }}
         submitLabel="提交需求"
         onCancel={onClose}
         onSubmit={async (body) => {

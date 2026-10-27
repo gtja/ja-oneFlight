@@ -228,9 +228,9 @@ describe("task-gated native flight workspace", () => {
     await screen.findByText("关联计划已审批通过。");
     expect(
       screen
-        .getByRole("combobox", { name: "执行任务" })
-        .getAttribute("data-value"),
-    ).toBe("task-id");
+        .getByRole("button", { name: /机场巡检 · 待执行 · 可进入/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(screen.queryByTitle("牍术飞控操作区")).toBeNull();
     expect(launchCount(requests)).toBe(0);
     const frame = await enter();
@@ -253,9 +253,9 @@ describe("task-gated native flight workspace", () => {
     await screen.findByText("条件已满足，点击进入即可。");
     expect(
       screen
-        .getByRole("combobox", { name: "执行任务" })
-        .getAttribute("data-value"),
-    ).toBe("task-id");
+        .getByRole("button", { name: /机场巡检 · 待执行 · 可进入/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(
       requests.mock.calls.some(
         ([url]) =>
@@ -282,29 +282,23 @@ describe("task-gated native flight workspace", () => {
       candidates: [allowed, second],
     });
     await screen.findByText("选择一个任务，系统会自动检查进入条件。");
-    const selector = screen.getByRole("combobox", { name: "执行任务" });
-    expect(selector.getAttribute("data-value")).toBe("");
-    expect(selector.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByRole("listbox")).toBeNull();
-    fireEvent.click(selector);
-    const firstOption = await screen.findByRole("option", {
+    const firstTask = await screen.findByRole("button", {
       name: /机场巡检 · 待执行 · 可进入/,
     });
-    const secondOption = screen.getByRole("option", {
+    const secondTask = screen.getByRole("button", {
       name: /第二个任务 · 待执行 · 可进入/,
     });
     expect(
-      within(firstOption).getByText("设备：机场一号 · 飞手：飞手"),
+      within(firstTask).getByText("设备：机场一号 · 飞手：飞手"),
     ).toBeTruthy();
     expect(
-      within(secondOption).getByText("设备：机场一号 · 飞手：飞手"),
+      within(secondTask).getByText("设备：机场一号 · 飞手：飞手"),
     ).toBeTruthy();
     expect(
       requests.mock.calls.some(([url]) => url.includes("/preflight?")),
     ).toBe(false);
-    fireEvent.click(firstOption);
-    expect(selector.getAttribute("data-value")).toBe("task-id");
-    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.click(firstTask);
+    expect(firstTask.getAttribute("aria-pressed")).toBe("true");
     await enter();
     expect(launchCount(requests)).toBe(1);
   });
@@ -315,7 +309,7 @@ describe("task-gated native flight workspace", () => {
     });
     fireEvent.click(await screen.findByRole("button", { name: "申请飞行" }));
     expect(navigate).toHaveBeenCalledWith("services", { action: "apply" });
-    expect(screen.queryByRole("combobox", { name: "执行任务" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /执行任务/ })).toBeNull();
     expect(launchCount(requests)).toBe(0);
   });
   it("shows the assigned pilot and scheduling entry before opening check details", async () => {
@@ -448,9 +442,9 @@ describe("task-gated native flight workspace", () => {
     await screen.findByText("这个任务的执行时间已结束，请安排新的飞行。");
     expect(
       screen
-        .getByRole("combobox", { name: "执行任务" })
-        .getAttribute("data-value"),
-    ).toBe("old-task");
+        .getByRole("button", { name: /机场巡检 · 待执行 · 待完善/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(
       requests.mock.calls.some(([url]) => url.includes("includeExpired=false")),
     ).toBe(true);
@@ -464,9 +458,9 @@ describe("task-gated native flight workspace", () => {
     );
     expect(
       screen
-        .getByRole("combobox", { name: "执行任务" })
-        .getAttribute("data-value"),
-    ).toBe("old-task");
+        .getByRole("button", { name: /机场巡检 · 待执行 · 待完善/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(launchCount(requests)).toBe(0);
   });
   it.each([true, false])(

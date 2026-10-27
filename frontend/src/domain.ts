@@ -21,6 +21,7 @@ export const STATUS_LABELS: Record<string, string> = {
   PENDING_CONFIGURATION: "待接入",
   APPROVED: "已通过",
   PENDING_DISPOSAL: "待处置",
+  PENDING_TRANSFER: "待移交",
   RESOLVED: "已处置",
   ARCHIVED: "已归档",
   OPEN: "待答复",

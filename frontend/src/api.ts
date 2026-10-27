@@ -2,7 +2,7 @@
 // HTTP transport stays independent of React in api/client.ts.
 import type { Entity } from "./api/types";
 
-export type { CurrentUser, Entity, Page } from "./api/types";
+export type { CurrentUser, Entity, Page, WeatherObservation, WeatherOverview } from "./api/types";
 export { api, ApiError, queryString, readCatalog, write } from "./api/client";
 export { useCatalog, useData, useDevices, useList } from "./api/hooks";
 

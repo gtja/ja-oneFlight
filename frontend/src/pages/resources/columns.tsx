@@ -10,6 +10,7 @@ import {
 } from "../../devicePresentation";
 import { Status, type DataTable } from "../../components/UI";
 import { resourceKinds as kinds, schedulingLabel } from "./config";
+import { resourceValueLabel } from "./details";
 
 export function resourceColumns(
   kind: string,
@@ -90,7 +91,7 @@ export function resourceColumns(
           {
             key: "status",
             label: "来源状态",
-            render: (r) => <Status status={r.status} />,
+            render: (r) => <Status status={r.status} label={resourceValueLabel(String(r.status || "UNKNOWN"))} />,
           },
           {
             key: "dispatchStatus",
@@ -110,7 +111,11 @@ export function resourceColumns(
       : kind === "MEDIA"
         ? [
             { key: "fileName", label: "文件名称" },
-            { key: "contentType", label: "文件类型" },
+            {
+              key: "contentType",
+              label: "文件类型",
+              render: (r) => resourceValueLabel(String(r.contentType || "未知")),
+            },
             {
               key: "createdAt",
               label: "上传时间",

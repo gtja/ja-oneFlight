@@ -67,9 +67,23 @@
 
 `POST /api/v1/devices/{id}/commands` 继续作为独立的物理命令预留接口，命令枚举为 `DISPATCH_TASK/TAKEOFF/RETURN_HOME`。通过身份及设备范围校验的调用仍返回 HTTP 501、`code=PROVIDER_NOT_CONFIGURED`；未授权调用按权限规则拒绝。页面作业和载荷按钮没有连接此接口，也没有上游设备命令调用。
 
+## 场景线索与成果归档
+
+线索通过 `/api/v1/cases` 登记，状态按 `PENDING_REVIEW → PENDING_TRANSFER → PENDING_DISPOSAL → RESOLVED → ARCHIVED` 推进：`VERIFY` 必须填写复核结论，`TRANSFER` 记录移交并进入现场处置，`RESOLVE` 必须填写处置结论，`ARCHIVE` 完成复查归档；复核认定无效可用 `DISMISS` 直接归档。历史 `PENDING_DISPOSAL` 线索仍可继续处置，历史 `RESOLVED` 线索仍可执行 `ARCHIVE`。登记来源任务时，任务和线索必须属于同一组织及区域。
+
+场景线索附件通过 `POST /api/v1/attachments` 的 `caseId` 上传，任务附件使用 `taskId`。`GET /api/v1/attachments` 汇总当前账号可访问的任务成果、线索证据及明确授权的共享文件，因此场景中上传的证据会自动出现在“资源管理 → 数据成果”；同一附件的质检、归档和共享状态也在两处一致。附件本身有各自的质检与归档状态，线索归档不会代替文件质检或删除附件。来源识别观测与本地线索分别保存，只有显式可追溯的关联才能作为本案识别记录，不按设备或时间自动推断。
+
 ## 时间、上传和列表
 
-使用 `Asia/Shanghai` 显示业务时间，按源数据的实际时间标记展示遥测和飞行记录。缺失时间及指标显示未知。附件上传由后端鉴权并持久化到上传卷；单文件上限 100 MB，Nginx 请求上限 101 MB（为 multipart 预留空间）。
+使用 `Asia/Shanghai` 显示业务时间，按源数据的实际时间标记展示遥测和飞行记录。缺失时间及指标显示未知。附件上传由后端鉴权并持久化到上传卷；单文件上限 100 MB，Nginx 请求上限 101 MB（为 multipart 预留空间）。附件 `/api/v1/attachments/{id}/content` 与 `/download` 保持下载语义；`/{id}/preview` 复用关联业务记录和访问范围校验，仅按文件签名以内联方式提供 JPEG、PNG、GIF、WebP，其他格式返回请求错误。附件列表附带 `qualityStatus`、`qualityNote`、`reviewedAt`、`archivedAt`；新上传默认为 `PENDING_REVIEW`。仅管理员和调度员可使用 `PATCH /api/v1/attachments/{id}/quality` 记录 `PASSED` 或 `NEEDS_SUPPLEMENT` 及意见，`POST /api/v1/attachments/{id}/archive` 仅允许归档已通过质检的附件。两类操作均保留操作者、时间和审计事件。
+
+仅管理员和调度员可以申请附件共享：`POST /api/v1/attachments/share-requests` 接受 `{attachmentIds,targetOrganizationId,purpose,expiresAt}`，最多100个附件。附件须属于同一组织和区域；目标组织须启用且不能是来源组织；有效期须距当前时间至少一小时且不超过90天。`GET /api/v1/attachments/share-requests` 返回当前业务范围内的申请记录。`POST /api/v1/attachments/share-requests/{id}/actions` 接受 `{action:"APPROVE"|"REJECT",note?}`；申请人不能审批自己的申请，驳回必须填写原因。只有获批且未过期的申请生效，目标组织获得指定附件的预览和下载权，不获得任务或线索访问权；共享附件列表隐藏父记录标识和质检意见。会话、CSRF、组织/区域访问范围及审计规则仍适用。
+
+### 机巢气象遥测
+
+- `GET /api/v1/weather/observations`：返回当前账号授权范围内 `UAV_AIRPORT` 机巢的只读观测及 MQTT 来源状态。结果按设备名排序，并在读取前后复核授权；来源失败按现有来源错误响应返回，不伪装成成功空列表。
+- 当前识别经验证机巢 OSD 的 `wind_speed`（米/秒）、`environment_temperature`/`temperature`（摄氏度）及 `humidity`（百分比）。观测时间沿用来源时间；遥测超过现有有效窗口后状态为未知，页面不标记为在线。未提供的降水、能见度等指标保持未知。
+- 此读取接口不产生告警、不判定适飞阈值、不下发停飞或返航指令。
 
 来源成功且无记录时返回空列表；来源未配置、超时或权限失效时返回来源状态及原因，不能转换为成功的空列表。来源状态接口不泄露敏感配置。
 

@@ -97,6 +97,24 @@ public class DeviceDirectory {
         require(id);
         return result;
     }
+    public List<WeatherObservation> weatherObservations(TelemetryReceiver telemetry) {
+        Set<String> permitted = allowedIds();
+        List<WeatherObservation> observations = new ArrayList<>();
+        for (Device device : authorized().values()) {
+            if (!permitted.contains(device.id()) || !"UAV_AIRPORT".equals(device.type())) { continue; }
+            Telemetry latest = telemetry.current(device.id());
+            observations.add(new WeatherObservation(device.id(), device.name(), latest.status(),
+                    latest.lastObservedAt(), latest.receivedAt(), latest.windSpeed(), latest.temperature(), latest.humidity(),
+                    device.longitude(), device.latitude()));
+        }
+        observations.sort(java.util.Comparator.comparing(WeatherObservation::deviceName,
+                java.util.Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+                .thenComparing(WeatherObservation::deviceId));
+        Set<String> permittedAfterRead = allowedIds();
+        if (!permittedAfterRead.containsAll(permitted)) { throw ProviderJson.failure("设备授权已变化，请重新查询"); }
+        observations.removeIf(item -> !permittedAfterRead.contains(item.deviceId()));
+        return observations;
+    }
     public PageResult<Device> list(String keyword, String type, Boolean hasFlightTotals, int page, int size, TelemetryReceiver telemetry,
             SourceDatabase database) {
         Set<String> permitted = allowedIds();

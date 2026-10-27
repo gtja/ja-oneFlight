@@ -146,6 +146,32 @@ class SourceContractTest {
         assertEquals(22d, TelemetryReceiver.parse("A", payload, node("{}"), now, "UAV_AIRPORT").windSpeed());
         assertNull(TelemetryReceiver.parse("A", payload, node("{}"), now).windSpeed());
     }
+    @Test void weatherObservationsIncludeOnlyAuthorizedDocksAndTheirOwnTelemetry() throws Exception {
+        ProviderHttpClient http = mock(ProviderHttpClient.class);
+        when(http.gateway(eq("/device/list/tree/v4"), anyMap())).thenReturn(node(
+                "{\"roots\":[{\"devices\":["
+                        + "{\"deviceId\":\"DOCK-1\",\"deviceName\":\"机巢一\",\"deviceType\":\"UAV_AIRPORT\"},"
+                        + "{\"deviceId\":\"DOCK-2\",\"deviceName\":\"机巢二\",\"deviceType\":\"UAV_AIRPORT\"},"
+                        + "{\"deviceId\":\"AIRCRAFT\",\"deviceName\":\"无人机\",\"deviceType\":\"UAV\"}]}]}"));
+        DeviceDirectory directory = new DeviceDirectory(properties(), http, scope(Role.DISPATCH, Set.of("DOCK-1")));
+        directory.refresh();
+        TelemetryReceiver telemetry = mock(TelemetryReceiver.class);
+        Instant observedAt = Instant.parse("2026-10-26T05:00:00Z");
+        when(telemetry.current("DOCK-1")).thenReturn(new Telemetry("DOCK-1", "ONLINE", observedAt,
+                observedAt, null, null, null, null, null, 3.2, 24d, 60d, null));
+
+        List<WeatherObservation> observations = directory.weatherObservations(telemetry);
+
+        assertEquals(1, observations.size());
+        assertEquals("DOCK-1", observations.getFirst().deviceId());
+        assertEquals("机巢一", observations.getFirst().deviceName());
+        assertEquals(3.2, observations.getFirst().windSpeed());
+        assertEquals(24d, observations.getFirst().temperature());
+        assertEquals(60d, observations.getFirst().humidity());
+        verify(telemetry).current("DOCK-1");
+        verify(telemetry, never()).current("DOCK-2");
+        verify(telemetry, never()).current("AIRCRAFT");
+    }
     @Test void undeployedFilterFalseIsPreservedAndStatisticsDoNotAddPaging() throws Exception {
         ProviderHttpClient http = mock(ProviderHttpClient.class);
         when(http.algorithm(eq("/algorithm/app/list"), anyMap())).thenReturn(node("{\"rows\":[],\"total\":0}"));

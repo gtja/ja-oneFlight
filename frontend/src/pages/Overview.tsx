@@ -6,6 +6,8 @@ import {
   Info,
   Layers3,
   ShieldAlert,
+  Wind,
+  Thermometer,
 } from "lucide-react";
 import {
   entityName,
@@ -14,6 +16,7 @@ import {
   useDevices,
   useList,
   type Entity,
+  type WeatherOverview,
 } from "../api";
 import { dateTime, REGIONS, secondsLabel } from "../domain";
 import type { Navigate } from "../navigation";
@@ -34,6 +37,20 @@ import {
   Status,
   Unavailable,
 } from "../components/UI";
+
+const hasWeatherReading = (station: WeatherOverview["stations"][number]) =>
+  [station.windSpeed, station.temperature, station.humidity].some(
+    (value) => value !== null && value !== undefined && Number.isFinite(value),
+  );
+
+function coordinate(value: unknown, minimum: number, maximum: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return value !== null && value !== undefined && value !== "" &&
+    Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum
+    ? parsed
+    : null;
+}
+
 export default function Overview({ navigate }: { navigate: Navigate }) {
   const [region, setRegion] = useState("");
   const [period, setPeriod] = useState("today");
@@ -44,14 +61,17 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
     devices: true,
     detectors: true,
     equipment: true,
+    weather: true,
   });
   const [areaFocus, setAreaFocus] = useState<AreaFocusRequest>();
   const [areaMessage, setAreaMessage] = useState("");
+  const [weatherMessage, setWeatherMessage] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [report, setReport] = useState(false);
   const [info, setInfo] = useState(false);
   const dashboard = useData<Entity>("/dashboard", true, 30_000);
   const devices = useDevices();
+  const weather = useData<WeatherOverview>("/weather/observations", true, 10_000);
   const local = useCatalog("/resources", {}, true, 30_000);
   const cases = useList("/cases");
   const tasks = useList("/tasks");
@@ -81,10 +101,42 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
       ),
     [catalogObjects, region, search],
   );
+  const weatherStations = useMemo(() =>
+    (weather.data?.stations || []).map((station) => {
+      const resource = (local.data?.items || []).find((item) => item.sourceDeviceId === station.deviceId);
+      const longitude = coordinate(station.longitude ?? resource?.longitude, -180, 180);
+      const latitude = coordinate(station.latitude ?? resource?.latitude, -90, 90);
+      return { station, resource, longitude, latitude };
+    }),
+  [weather.data, local.data]);
+  const weatherObjects = useMemo<Entity[]>(() =>
+    weatherStations.flatMap(({ station, resource, longitude, latitude }) => {
+      if (!hasWeatherReading(station) || longitude === null || latitude === null) return [];
+      if (region && resource?.region !== region) return [];
+      return [{
+        id: `weather:${station.deviceId}`,
+        kind: "WEATHER",
+        type: "WEATHER",
+        title: station.deviceName || station.deviceId,
+        name: station.deviceName || station.deviceId,
+        sourceDeviceId: station.deviceId,
+        region: resource?.region,
+        longitude,
+        latitude,
+        weatherObservation: station,
+      }];
+    }),
+  [weatherStations, region]);
+  const mapObjects = useMemo(() => [...objects, ...weatherObjects], [objects, weatherObjects]);
+  const stationsWithReadings = weatherStations.filter(({ station }) => hasWeatherReading(station));
+  const stationsWithReadingsAndLocation = stationsWithReadings.filter(
+    ({ longitude, latitude }) => longitude !== null && latitude !== null,
+  );
   const selected =
     catalogObjects.find(
       (item) => item.id === selectedId && (!region || item.region === region),
     ) || null;
+  const selectedWeather = weatherObjects.find((item) => item.id === selectedId) || null;
   function focusRegion(nextRegion: string) {
     const location = nextRegion
       ? mapObjectsLocation(
@@ -205,8 +257,9 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
       </PageHeader>
       <div className="overview-map">
         <FlightMap
-          objects={objects}
+          objects={mapObjects}
           onSelect={(item) => setSelectedId(item.id)}
+          selectedObjectId={selectedId || undefined}
           layers={layers}
           areaFocusRequest={areaFocus}
           onResetView={() => focusRegion(region)}
@@ -214,6 +267,11 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
         {areaMessage && (
           <div className="overview-area-message" role="status">
             {areaMessage}
+          </div>
+        )}
+        {weatherMessage && (
+          <div className="overview-area-message overview-weather-message" role="status">
+            {weatherMessage}
           </div>
         )}
         <div className="map-metrics">
@@ -287,8 +345,20 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
               <h3>环境保障</h3>
               <Cloud size={13} />
             </div>
-            <p className="muted">区域气象服务未接入</p>
-            <small>机巢观测可从对应设备档案核对。</small>
+            <p className="muted">
+              {weather.isLoading
+                ? "正在读取机巢气象观测…"
+                : weather.error
+                  ? "机巢气象观测读取失败"
+                  : stationsWithReadings.length === 0
+                    ? "暂无机巢上报风速、温度或湿度"
+                    : `有读数 ${stationsWithReadings.length} 台 · 有效坐标 ${stationsWithReadingsAndLocation.length} 台`}
+            </p>
+            <small>
+              {weather.error
+                ? weather.error.message
+                : `遥测通道：${weather.data?.sourceHealth.state === "HEALTHY" ? "连接正常" : weather.data?.sourceHealth.state === "ERROR" ? "连接异常" : "等待来源上报"} · 地图联动 ${weatherObjects.length} 台`}
+            </small>
           </section>
           {devices.error && (
             <section className="map-panel source-warning">
@@ -305,15 +375,31 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
               devices: "航空器",
               detectors: "探测设备",
               equipment: "其他设备",
+              weather: "机巢气象",
             }).map(([key, label]) => (
               <button
                 className={layers[key as keyof typeof layers] ? "active" : ""}
                 key={key}
                 onClick={() =>
-                  setLayers({
-                    ...layers,
-                    [key]: !layers[key as keyof typeof layers],
-                  })
+                  {
+                    const enabled = !layers[key as keyof typeof layers];
+                    setLayers({ ...layers, [key]: enabled });
+                    if (key === "weather") {
+                      if (!weatherObjects.length) {
+                        setWeatherMessage(
+                          weather.error
+                            ? "气象观测读取失败，请检查机巢遥测连接。"
+                            : stationsWithReadings.length === 0
+                              ? "图层开关已切换；当前没有机巢上报风速、温度或湿度，地图暂无气象点。"
+                              : stationsWithReadingsAndLocation.length === 0
+                                ? "已收到气象读数，但机巢档案缺少有效坐标，暂时无法定位到地图。"
+                                : "当前区域筛选内暂无可显示的气象点。"
+                        );
+                      } else {
+                        setWeatherMessage(enabled ? "机巢气象图层已开启。" : "机巢气象图层已关闭。");
+                      }
+                    }
+                  }
                 }
               >
                 <Layers3 size={12} />
@@ -322,7 +408,7 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
             ))}
           </div>
           <small>
-            {objects.length} 个可见对象 ·{" "}
+            {mapObjects.length} 个可见对象 ·{" "}
             {new Intl.DateTimeFormat("zh-CN", {
               timeZone: "Asia/Shanghai",
               hour: "2-digit",
@@ -361,6 +447,22 @@ export default function Overview({ navigate }: { navigate: Navigate }) {
               ]}
             />
           )}
+        </Modal>
+      )}
+      {selectedWeather && (
+        <Modal title={`${entityName(selectedWeather)} · 气象观测`} onClose={() => setSelectedId(null)}>
+          {(() => {
+            const station = selectedWeather.weatherObservation as WeatherOverview["stations"][number];
+            const value = (reading: number | null | undefined, unit: string) =>
+              reading === null || reading === undefined || !Number.isFinite(reading) ? "暂无数据" : `${reading} ${unit}`;
+            return <Details items={[
+              { label: "设备编号", value: station.deviceId },
+              { label: "风速", value: <><Wind size={13} /> {value(station.windSpeed, "米/秒")}</> },
+              { label: "温度", value: <><Thermometer size={13} /> {value(station.temperature, "℃")}</> },
+              { label: "湿度", value: value(station.humidity, "%") },
+              { label: "观测时间", value: dateTime(station.observedAt) },
+            ]} />;
+          })()}
         </Modal>
       )}
       {report && (

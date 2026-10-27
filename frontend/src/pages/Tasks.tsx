@@ -1,15 +1,26 @@
 import type { Navigate } from "../navigation";
 import "./experience.css";
+import "./tasks/taskScheduling.css";
 import { taskNextStep } from "../taskWorkflow";
 import { flightPlanCompatibility } from "../flightPlanLink";
 import SourceRecords from "../components/SourceRecords";
 import TaskAssignmentModal from "../components/TaskAssignmentModal";
 import RequestAssistant from "./tasks/RequestAssistant";
+import TaskScheduleCalendar, {
+  calendarToday,
+  scheduleDateKey,
+  scheduleTimeLabel,
+  type ScheduleView,
+} from "./tasks/TaskScheduleCalendar";
 import TaskRequestForm from "./tasks/TaskRequestForm";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
+  CheckCircle2,
+  ChevronDown,
   CalendarDays,
+  Clock3,
+  Inbox,
   List,
   Plus,
   WandSparkles,
@@ -37,18 +48,13 @@ import {
   Details,
   Empty,
   EntityForm,
-  ListFooter,
   Modal,
   PageHeader,
   SearchBox,
   Select,
   Status,
-  Tabs,
   type Field,
 } from "../components/UI";
-const calendarDayFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Shanghai",
-});
 const taskFields: Field[] = [
   { key: "title", label: "任务名称", required: true, wide: true },
   {
@@ -91,6 +97,42 @@ const taskFields: Field[] = [
     wide: true,
   },
 ];
+
+function TaskScheduleFooter({
+  page,
+  visibleCount,
+  onChange,
+}: {
+  page?: { page: number; pageSize: number; total: number };
+  visibleCount: number;
+  onChange: (page: number) => void;
+}) {
+  const pageCount = page ? Math.ceil(page.total / page.pageSize) : 0;
+  return (
+    <div className="list-footer task-schedule-footer">
+      <span>任务与作业、架次分别记录</span>
+      <span>
+        当前显示 {visibleCount} / {page?.total ?? "—"}
+        {page && pageCount > 1 && (
+          <span className="task-schedule-pagination">
+            <Button small disabled={page.page <= 1} onClick={() => onChange(page.page - 1)}>
+              上一页
+            </Button>
+            {page.page} / {pageCount}
+            <Button
+              small
+              disabled={page.page >= pageCount}
+              onClick={() => onChange(page.page + 1)}
+            >
+              下一页
+            </Button>
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 export default function Tasks({
   navigate,
   taskId,
@@ -108,11 +150,21 @@ export default function Tasks({
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
   const [calendar, setCalendar] = useState(false);
+  const [queue, setQueue] = useState("all");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [resourceFilter, setResourceFilter] = useState("");
+  const [calendarView, setCalendarView] = useState<ScheduleView>("month");
+  const [calendarDate, setCalendarDate] = useState(calendarToday);
+  const [fullDay, setFullDay] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [nativeHistory, setNativeHistory] = useState(false);
   const [selected, setSelected] = useState<Entity | null>(
     taskId ? { id: taskId } : null,
   );
   const [showCreate, setShowCreate] = useState(false);
+  const [createPriority, setCreatePriority] = useState<"NORMAL" | "URGENT">(
+    "NORMAL",
+  );
   const creationBusy = useRef(false);
   const [editing, setEditing] = useState(false);
   const [assistant, setAssistant] = useState(false);
@@ -206,25 +258,125 @@ export default function Tasks({
     const pilot = pilots.data?.items.find((item) => item.id === id);
     return pilot ? String(pilot.displayName || pilot.title) : "已分配执行人员";
   }
+  function organizationCaption(task: Entity) {
+    if (task.organizationName) return String(task.organizationName);
+    const organization = organizations.data?.items.find(
+      (item) =>
+        String(item.organizationId || item.id || "") ===
+        String(task.organizationId || ""),
+    );
+    return organization ? entityName(organization) : "本部门";
+  }
   const stages = [
-    { id: "", label: "全部任务" },
-    { id: "PENDING_ASSIGNMENT", label: "待分配" },
-    { id: "PENDING_EXECUTION", label: "待执行" },
-    { id: "EXECUTING", label: "执行中" },
-    { id: "PENDING_ACCEPTANCE", label: "待验收" },
-    { id: "COMPLETED", label: "已完成" },
-  ].map((t) => ({
-    ...t,
-    count: planId
-      ? t.id === filter
+    { id: "", label: "全部阶段" },
+    { id: "DRAFT", label: statusLabel("DRAFT") },
+    { id: "RETURNED", label: statusLabel("RETURNED") },
+    { id: "PENDING_ASSIGNMENT", label: statusLabel("PENDING_ASSIGNMENT") },
+    { id: "PENDING_EXECUTION", label: statusLabel("PENDING_EXECUTION") },
+    { id: "EXECUTING", label: statusLabel("EXECUTING") },
+    { id: "PENDING_ACCEPTANCE", label: statusLabel("PENDING_ACCEPTANCE") },
+    { id: "COMPLETED", label: statusLabel("COMPLETED") },
+    { id: "CANCELLED", label: statusLabel("CANCELLED") },
+  ];
+  const queueItems = [
+    { id: "all", label: "全部任务", statuses: [] as string[] },
+    { id: "intake", label: "需求受理", statuses: ["DRAFT", "RETURNED"] },
+    {
+      id: "planning",
+      label: "计划准备",
+      statuses: ["PENDING_ASSIGNMENT"],
+    },
+    {
+      id: "flight",
+      label: "飞行作业",
+      statuses: ["PENDING_EXECUTION", "EXECUTING"],
+    },
+    {
+      id: "acceptance",
+      label: "交付验收",
+      statuses: ["PENDING_ACCEPTANCE"],
+    },
+    {
+      id: "closed",
+      label: "已结案",
+      statuses: ["COMPLETED", "CANCELLED"],
+    },
+  ].map((item) => {
+    const count = planId
+      ? item.id === "all"
         ? query.data?.total
-        : undefined
-      : t.id
-        ? dashboard.data
-          ? (dashboard.data.taskCounts[t.id] ?? 0)
-          : undefined
-        : dashboard.data?.taskTotal,
-  }));
+        : rows.filter((row) => item.statuses.includes(String(row.status))).length
+      : !dashboard.data
+        ? undefined
+        : item.id === "all"
+          ? dashboard.data.taskTotal
+          : item.statuses.reduce(
+              (total, status) =>
+                total + (dashboard.data?.taskCounts[status] ?? 0),
+              0,
+            );
+    return { ...item, count };
+  });
+  const selectedQueue = queueItems.find((item) => item.id === queue) || queueItems[0];
+  const queueRows =
+    queue === "all"
+      ? rows
+      : rows.filter((row) =>
+          selectedQueue.statuses.includes(String(row.status)),
+        );
+  const filteredRows = queueRows.filter((row) => {
+    const organizationMatches =
+      !departmentFilter ||
+      String(row.organizationId || "") === departmentFilter ||
+      String(row.organizationName || "") === departmentFilter;
+    const resourceMatches =
+      !resourceFilter || String(row.deviceId || "") === resourceFilter;
+    return organizationMatches && resourceMatches;
+  });
+  const taskCount =
+    queue !== "all" || departmentFilter || resourceFilter
+      ? filteredRows.length
+      : search || filter
+        ? (query.data?.total ?? "—")
+        : (selectedQueue.count ?? query.data?.total ?? "—");
+  const departmentOptions = [
+    { value: "", label: "全部需求部门" },
+    ...Array.from(
+      new Map(
+        [
+          ...(organizations.data?.items || []),
+          ...rows.filter((row) => row.organizationId || row.organizationName),
+        ].map((organization) => {
+          const id = String(organization.organizationId || organization.id || "");
+          const name = String(
+            organization.title ||
+              organization.name ||
+              organization.organizationName ||
+              "本部门",
+          );
+          return [id || name, { value: id || name, label: name }] as const;
+        }),
+      ).values(),
+    ),
+  ];
+  const resourceOptions = [
+    { value: "", label: "全部执行资源" },
+    ...(resources.data?.items || []).map((resource) => ({
+      value: resource.id,
+      label: entityName(resource),
+    })),
+  ];
+  const planOptions = [
+    { value: "", label: "全部飞行计划" },
+    ...(plans.data?.items || [])
+      .filter((plan) => ["DAILY", "LONG_TERM"].includes(String(plan.kind)))
+      .map((plan) => ({ value: plan.id, label: entityName(plan) })),
+    ...(planId &&
+    filteredPlan.data &&
+    !plans.data?.items.some((plan) => plan.id === planId)
+      ? [{ value: planId, label: entityName(filteredPlan.data) }]
+      : []),
+  ];
   const actionTitles: Record<string, string> = {
     SUBMIT: "提交需求",
     ASSIGN: "分配执行资源",
@@ -251,47 +403,92 @@ export default function Tasks({
         ]
       : []),
   ];
-  const calendarTasks = new Map<string, Entity[]>();
-  if (calendar && !nativeHistory) {
-    for (const task of rows) {
-      if (!task.startAt) continue;
-      const day = calendarDayFormatter.format(new Date(String(task.startAt)));
-      const dayTasks = calendarTasks.get(day);
-      if (dayTasks) dayTasks.push(task);
-      else calendarTasks.set(day, [task]);
-    }
-  }
   return (
-    <div className="page task-page experience-page">
-      <PageHeader
-        title="任务调度"
-        subtitle="提交需求、分配资源、执行与验收，在一张任务单内办理"
-      >
+    <div className="page task-page experience-page task-scheduling-page">
+      <PageHeader title="任务调度" subtitle="统一受理 · 统筹排期 · 分别交付">
+        <div className="task-more-business">
+          <Button
+            aria-expanded={moreOpen}
+            aria-haspopup="dialog"
+            onClick={() => setMoreOpen((open) => !open)}
+          >
+            更多业务 <ChevronDown size={13} />
+          </Button>
+          {moreOpen && (
+            <div
+              className="task-more-menu"
+              role="dialog"
+              aria-label="更多业务"
+            >
+              <span className="task-more-menu-title">所属飞行计划</span>
+              <Select
+                label="所属飞行计划"
+                value={planId || ""}
+                onChange={(value) => {
+                  setMoreOpen(false);
+                  navigate("dispatch", value ? { planId: value } : undefined);
+                }}
+                options={planOptions}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  navigate("services");
+                }}
+              >
+                飞行服务计划
+              </button>
+              {manage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setNativeHistory((value) => !value);
+                  }}
+                >
+                  {nativeHistory ? "返回任务办理" : "来源行动（只读）"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         {create && !planId && (
           <Button onClick={() => setAssistant(true)}>
             <WandSparkles size={14} />
             需求助手
           </Button>
         )}
+        {create && !planId && (
+          <Button
+            className="task-emergency-button"
+            onClick={() => {
+              setCreatePriority("URGENT");
+              setShowCreate(true);
+            }}
+          >
+            应急插单
+          </Button>
+        )}
         {create && (
           <Button
             primary
-            onClick={() =>
-              planId ? navigate("services", { planId }) : setShowCreate(true)
-            }
+            onClick={() => {
+              if (planId) navigate("services", { planId });
+              else {
+                setCreatePriority("NORMAL");
+                setShowCreate(true);
+              }
+            }}
           >
             <Plus size={15} />
             {planId ? "从原计划安排任务" : "提报需求"}
           </Button>
         )}
-        {["ADMIN", "DISPATCH"].includes(user.role) && (
-          <Button onClick={() => setNativeHistory(!nativeHistory)}>
-            {nativeHistory ? "返回任务办理" : "来源行动（只读）"}
-          </Button>
-        )}
-        <div className="segmented">
+        <div className="segmented task-view-toggle" role="group" aria-label="任务查看方式">
           <button
             className={!calendar ? "active" : ""}
+            aria-pressed={!calendar}
             onClick={() => setCalendar(false)}
           >
             <List size={14} />
@@ -299,6 +496,7 @@ export default function Tasks({
           </button>
           <button
             className={calendar ? "active" : ""}
+            aria-pressed={calendar}
             onClick={() => setCalendar(true)}
           >
             <CalendarDays size={14} />
@@ -307,7 +505,7 @@ export default function Tasks({
         </div>
       </PageHeader>
       {nativeHistory ? (
-        <div className="content-pad">
+        <div className="content-pad task-native-history">
           <h2>来源行动档案</h2>
           <p className="muted">
             展示真实上游行动，来源状态与本地调度流程分别记录。
@@ -315,39 +513,48 @@ export default function Tasks({
           <SourceRecords kind="tasks" />
         </div>
       ) : (
-        <>
-          <section className="task-flow-guide" aria-label="任务办理流程">
-            <div className="section-title">
-              <strong>一张任务单办到底</strong>
-              <small>设备与执行账号准备一次，后续任务直接分配</small>
-            </div>
-            <ol>
-              {[
-                ["提交需求", "需求部门"],
-                ["分配设备和飞手", "运营调度"],
-                ["关联已批计划 / 审批", "已有审批直接沿用"],
-                ["设备操作与成果", "飞手 / 调度"],
-                ["验收完成", "需求部门"],
-              ].map(([title, owner], index) => (
-                <li key={title}>
-                  <span>{index + 1}</span>
-                  <div>
-                    <strong>{title}</strong>
-                    <small>{owner}</small>
-                  </div>
-                  {index < 4 && <ArrowRight size={14} />}
-                </li>
-              ))}
-            </ol>
-          </section>
-          <div className="stage-bar">
-            <span>任务队列</span>
-            <Tabs items={stages} value={filter} onChange={setFilter} />
-          </div>
-          <div className="content-pad">
+        <div className={`task-scheduling-body ${calendar ? "calendar-open" : ""}`}>
+          {!calendar && (
+            <aside className="task-queue-panel" aria-label="任务队列">
+              <div className="task-queue-title">任务队列</div>
+              <nav>
+                {queueItems.map((item) => {
+                  const Icon =
+                    item.id === "all"
+                      ? List
+                      : item.id === "intake"
+                        ? Inbox
+                        : item.id === "planning"
+                          ? CalendarDays
+                          : item.id === "flight"
+                            ? Clock3
+                            : CheckCircle2;
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className={queue === item.id ? "active" : ""}
+                      aria-pressed={queue === item.id}
+                      onClick={() => {
+                        setQueue(item.id);
+                        setFilter("");
+                      }}
+                    >
+                      <span className="task-queue-label">
+                        <Icon size={14} />
+                        {item.label}
+                      </span>
+                      <span className="task-queue-count">{item.count ?? "—"}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </aside>
+          )}
+          <section className="task-scheduling-content">
             {planId && (
               <div
-                className="plan-filter-context"
+                className="plan-filter-context task-plan-filter-context"
                 role="note"
                 data-testid="task-plan-filter"
               >
@@ -378,207 +585,255 @@ export default function Tasks({
                 </div>
               </div>
             )}
-            <div className="table-toolbar">
-              <div>
-                <h2>{stages.find((s) => s.id === filter)?.label}</h2>
-                <p>
-                  {query.data?.total ?? 0} 条任务 · 点击查看要求、安排与办理记录
-                </p>
-              </div>
-              <SearchBox
-                value={search}
-                onChange={setSearch}
-                placeholder="搜索任务、计划名称、编号或区域"
-              />
-              <Select
-                label="所属飞行计划"
-                value={planId || ""}
-                onChange={(value) =>
-                  navigate("dispatch", value ? { planId: value } : undefined)
-                }
-                options={[
-                  { value: "", label: "全部飞行计划" },
-                  ...(plans.data?.items || [])
-                    .filter((plan) =>
-                      ["DAILY", "LONG_TERM"].includes(String(plan.kind)),
-                    )
-                    .map((plan) => ({
-                      value: plan.id,
-                      label: entityName(plan),
-                    })),
-                  ...(planId &&
-                  filteredPlan.data &&
-                  !plans.data?.items.some((plan) => plan.id === planId)
-                    ? [{ value: planId, label: entityName(filteredPlan.data) }]
-                    : []),
-                ]}
-              />
-              <Select
-                label="任务阶段"
-                value={filter}
-                onChange={setFilter}
-                options={stages.map((t) => ({ value: t.id, label: t.label }))}
-              />
-            </div>
             {calendar ? (
-              <div className="calendar-grid">
-                {Array.from({ length: 7 }, (_, index) => {
-                  const d = new Date();
-                  d.setDate(d.getDate() + index);
-                  const day = calendarDayFormatter.format(d);
-                  const tasks = calendarTasks.get(day) || [];
-                  return (
-                    <div className="calendar-day" key={index}>
-                      <header>
-                        {
-                          [
-                            "周日",
-                            "周一",
-                            "周二",
-                            "周三",
-                            "周四",
-                            "周五",
-                            "周六",
-                          ][d.getDay()]
-                        }
-                        <strong>{d.getDate()}</strong>
-                      </header>
-                      {tasks.map((r) => (
-                        <button
-                          className="calendar-task"
-                          key={r.id}
-                          onClick={() => setSelected(r)}
-                        >
-                          <small>{dateTime(r.startAt, true)}</small>
-                          <strong>{entityName(r)}</strong>
-                          <Status status={r.status} />
-                        </button>
-                      ))}
+              <>
+                <TaskScheduleCalendar
+                  tasks={filteredRows}
+                  filters={
+                    <div className="task-calendar-filters">
+                      <SearchBox
+                        value={search}
+                        onChange={setSearch}
+                        placeholder="搜索任务、编号或区域"
+                      />
+                      <Select
+                        label="任务队列筛选"
+                        value={queue}
+                        onChange={(value) => {
+                          setQueue(value);
+                          setFilter("");
+                        }}
+                        options={queueItems.map((item) => ({
+                          value: item.id,
+                          label: item.label,
+                        }))}
+                      />
+                      <Select
+                        label="需求部门筛选"
+                        value={departmentFilter}
+                        onChange={setDepartmentFilter}
+                        options={departmentOptions}
+                      />
+                      <Select
+                        label="任务阶段"
+                        value={filter}
+                        onChange={(value) => {
+                          setFilter(value);
+                          setQueue("all");
+                        }}
+                        options={stages.map((stage) => ({
+                          value: stage.id,
+                          label: stage.label,
+                        }))}
+                      />
+                      <Select
+                        label="排期资源"
+                        value={resourceFilter}
+                        onChange={setResourceFilter}
+                        options={resourceOptions}
+                      />
                     </div>
-                  );
-                })}
-                {!rows.length && (
-                  <div className="calendar-empty">本周暂无已排期任务</div>
-                )}
-              </div>
+                  }
+                  resources={resources.data?.items || []}
+                  resourcesLoading={resources.isLoading}
+                  resourcesError={resources.error}
+                  selectedDate={calendarDate}
+                  view={calendarView}
+                  fullDay={fullDay}
+                  onSelectedDateChange={setCalendarDate}
+                  onViewChange={setCalendarView}
+                  onFullDayChange={setFullDay}
+                  onTaskSelect={setSelected}
+                />
+                <TaskScheduleFooter
+                  page={query.data}
+                  visibleCount={filteredRows.length}
+                  onChange={query.setPage}
+                />
+              </>
             ) : (
-              <DataTable
-                loading={query.isLoading}
-                error={query.error}
-                rows={rows}
-                onRow={setSelected}
-                columns={[
-                  {
-                    key: "title",
-                    label: "任务与作业目标",
-                    render: (r) => (
-                      <div className="name-cell">
-                        <strong>{entityName(r)}</strong>
-                        <small>{String(r.number || r.id)}</small>
-                        {!!r.planId && (
-                          <small className="task-plan-name">
-                            计划：
-                            {String(
-                              r.planTitle ||
-                                entityName(
-                                  plans.data?.items.find(
-                                    (plan) => plan.id === r.planId,
-                                  ),
+              <>
+                <div className="task-list-heading">
+                  <div>
+                    <h2>{selectedQueue.label}</h2>
+                    <span>{taskCount} 条任务</span>
+                  </div>
+                  <small>点击任务查看要求、方案与办理记录</small>
+                </div>
+                <div className="task-list-filters">
+                  <SearchBox
+                    value={search}
+                    onChange={setSearch}
+                    placeholder="搜索任务、编号或区域"
+                  />
+                  <Select
+                    label="需求部门筛选"
+                    value={departmentFilter}
+                    onChange={setDepartmentFilter}
+                    options={departmentOptions}
+                  />
+                  <Select
+                    label="任务阶段"
+                    value={filter}
+                    onChange={(value) => {
+                      setFilter(value);
+                      setQueue("all");
+                    }}
+                    options={stages.map((stage) => ({
+                      value: stage.id,
+                      label: stage.label,
+                    }))}
+                  />
+                  <Select
+                    label="排期资源"
+                    value={resourceFilter}
+                    onChange={setResourceFilter}
+                    options={resourceOptions}
+                  />
+                </div>
+                <div className="task-scheduling-table">
+                  <DataTable
+                    loading={query.isLoading}
+                    error={query.error}
+                    rows={filteredRows}
+                    onRow={setSelected}
+                    columns={[
+                      {
+                        key: "title",
+                        label: "任务与作业目标",
+                        render: (r) => (
+                          <div className="name-cell">
+                            <span className="task-name-line">
+                              {r.priority === "URGENT" && (
+                                <span className="task-urgent-tag">紧急</span>
+                              )}
+                              <strong>{entityName(r)}</strong>
+                            </span>
+                            <small>{String(r.number || r.id)}</small>
+                            <small className="task-goal-caption">
+                              {String(r.description || "—")}
+                            </small>
+                          </div>
+                        ),
+                      },
+                      {
+                        key: "scene",
+                        label: "需求部门 / 场景",
+                        render: (r) => (
+                          <div>
+                            <span>{organizationCaption(r)}</span>
+                            <small>
+                              {r.region} · {String(r.scene || "—")}
+                            </small>
+                          </div>
+                        ),
+                      },
+                      {
+                        key: "startAt",
+                        label: "期望时间",
+                        render: (r) => {
+                          const startDate = scheduleDateKey(r.startAt);
+                          const endDate = scheduleDateKey(r.endAt);
+                          const startTime = scheduleTimeLabel(r.startAt);
+                          const endTime = scheduleTimeLabel(r.endAt);
+                          return (
+                            <div className="task-time-cell">
+                              <strong>
+                                {startTime && endTime
+                                  ? `${startTime} — ${endTime}`
+                                  : startTime || "待排期"}
+                              </strong>
+                              <small>
+                                {startDate && endDate && startDate !== endDate
+                                  ? `${startDate} 至 ${endDate}`
+                                  : startDate || "时间待定"}
+                              </small>
+                            </div>
+                          );
+                        },
+                      },
+                      {
+                        key: "deviceId",
+                        label: "执行安排",
+                        render: (r) => (
+                          <div>
+                            {r.deviceId ? deviceCaption(r.deviceId) : "等待编排"}
+                            <small>
+                              {String(
+                                r.pilotName ||
+                                  (r.pilotId ? pilotCaption(r.pilotId) : "待分配飞手"),
+                              )}
+                            </small>
+                          </div>
+                        ),
+                      },
+                      {
+                        key: "status",
+                        label: "当前阶段",
+                        render: (r) => <Status status={r.status} />,
+                      },
+                      {
+                        key: "next",
+                        label: "下一步",
+                        render: (r) => (
+                          <span className="text-link">
+                            {
+                              taskNextStep(
+                                r,
+                                user.role,
+                                plans.data?.items.find(
+                                  (plan) => plan.id === r.planId,
                                 ),
-                            )}
-                          </small>
-                        )}
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "scene",
-                    label: "需求部门 / 场景",
-                    render: (r) => (
-                      <div>
-                        <span>{String(r.organizationName || "本部门")}</span>
-                        <small>
-                          {r.region} · {String(r.scene || "—")}
-                        </small>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "startAt",
-                    label: "期望时间",
-                    render: (r) => (
-                      <div>
-                        {dateTime(r.startAt)}
-                        <small>至 {dateTime(r.endAt)}</small>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "deviceId",
-                    label: "执行安排",
-                    render: (r) => (
-                      <div>
-                        {deviceCaption(r.deviceId)}
-                        <small>
-                          {String(r.pilotName || pilotCaption(r.pilotId))}
-                        </small>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "status",
-                    label: "当前阶段",
-                    render: (r) => <Status status={r.status} />,
-                  },
-                  {
-                    key: "next",
-                    label: "下一步",
-                    render: (r) => (
-                      <span className="text-link">
-                        {
-                          taskNextStep(
-                            r,
-                            user.role,
-                            plans.data?.items.find(
-                              (plan) => plan.id === r.planId,
-                            ),
-                          ).label
-                        }{" "}
-                        <ArrowRight size={12} />
-                      </span>
-                    ),
-                  },
-                ]}
-                emptyTitle={
-                  search
-                    ? "没有匹配的任务"
-                    : planId
-                      ? "此计划尚未安排任务"
-                      : "暂无任务"
-                }
-                emptyDescription={
-                  planId
-                    ? "返回原计划安排本次执行任务，或清除筛选查看其他任务。"
-                    : "任务可由需求提报，也可从飞行服务中已审批的日常或长期计划安排。"
-                }
-              />
+                              ).label
+                            }{" "}
+                            <ArrowRight size={12} />
+                          </span>
+                        ),
+                      },
+                    ]}
+                    emptyTitle={
+                      search || departmentFilter || resourceFilter
+                        ? "没有匹配的任务"
+                        : planId
+                          ? "此计划尚未安排任务"
+                          : "暂无任务"
+                    }
+                    emptyDescription={
+                      planId
+                        ? "返回原计划安排本次执行任务，或清除筛选查看其他任务。"
+                        : "任务可由需求提报，也可从飞行服务中已审批的日常或长期计划安排。"
+                    }
+                  />
+                </div>
+                <TaskScheduleFooter
+                  page={query.data}
+                  visibleCount={filteredRows.length}
+                  onChange={query.setPage}
+                />
+              </>
             )}
-            <ListFooter page={query.data} onChange={query.setPage} />
-          </div>
-        </>
+          </section>
+        </div>
       )}
       {showCreate && (
         <Modal
-          title="提报飞行需求"
+          title={createPriority === "URGENT" ? "应急插单" : "提报飞行需求"}
           onClose={() => {
-            if (!creationBusy.current) setShowCreate(false);
+            if (!creationBusy.current) {
+              setShowCreate(false);
+              setCreatePriority("NORMAL");
+            }
           }}
         >
           <TaskRequestForm
             fields={createFields}
             organizationId={user.organizationId}
+            initialPriority={createPriority}
             onClose={() => {
-              if (!creationBusy.current) setShowCreate(false);
+              if (!creationBusy.current) {
+                setShowCreate(false);
+                setCreatePriority("NORMAL");
+              }
             }}
             onBusyChange={(busy) => {
               creationBusy.current = busy;

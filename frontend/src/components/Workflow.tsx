@@ -5,6 +5,41 @@ import { api, useList, write, type Entity } from "../api";
 import { dateTime } from "../domain";
 import { Details, Empty, EntityForm, Modal, type Field } from "./UI";
 import { useFeedback } from "../context";
+
+const workflowLabels: Record<string, string> = {
+  CREATE: "创建记录",
+  INITIALIZE: "初始化登记",
+  CREATE_FROM_PLAN: "从计划安排任务",
+  SOURCE_IMPORT: "来源档案导入",
+  FILE_IMPORT: "本地文件导入",
+  UPDATE: "修改记录",
+  SUBMIT: "提交申请",
+  ASSIGN: "分配资源",
+  LINK_PLAN: "关联飞行计划",
+  START: "开始执行",
+  FINISH: "提交成果",
+  ACCEPT: "验收通过",
+  RETURN: "退回完善",
+  CANCEL: "取消事项",
+  APPROVE: "审核通过",
+  REGISTER_RECEIPT: "登记回执",
+  VERIFY: "复核通过",
+  TRANSFER: "移交现场核查",
+  RESOLVE: "登记处置",
+  ARCHIVE: "完成归档",
+  DISMISS: "无效线索归档",
+  REPLY: "登记答复",
+  COMPLETE: "确认完成",
+  FLIGHT_ENTRY_GRANTED: "飞控入口已放行",
+  FLIGHT_ENTRY_CHECK_PASSED: "飞控入口校验通过",
+  BOOTSTRAP_ACCEPTED: "飞控页面已接入",
+  TICKET_ISSUED: "飞控访问凭证已签发",
+};
+
+function workflowLabel(value: unknown) {
+  const text = String(value ?? "");
+  return workflowLabels[text] || text;
+}
 export function useMutationFeedback() {
   const client = useQueryClient();
   const feedback = useFeedback();
@@ -22,6 +57,7 @@ export function ActionModal({
   fields = [],
   onClose,
   notice,
+  closeOnSuccess = false,
 }: {
   path: string;
   action: string;
@@ -29,6 +65,7 @@ export function ActionModal({
   fields?: Field[];
   onClose: () => void;
   notice?: string;
+  closeOnSuccess?: boolean;
 }) {
   const mutate = useMutationFeedback();
   return (
@@ -50,12 +87,13 @@ export function ActionModal({
         notice={notice}
         onCancel={onClose}
         submitLabel={title}
-        onSubmit={(body) =>
-          mutate(
+        onSubmit={async (body) => {
+          await mutate(
             () => write(`${path}/actions`, { ...body, action }),
             `${title}已完成`,
-          )
-        }
+          );
+          if (closeOnSuccess) onClose();
+        }}
       />
     </Modal>
   );
@@ -75,39 +113,9 @@ export function History({ path }: { path: string }) {
               <time>{dateTime(r.createdAt, true)}</time>
               <div>
                 <strong>
-                  {String(
-                    r.actionLabel ||
-                      (
-                        {
-                          CREATE: "创建记录",
-                          INITIALIZE: "初始化登记",
-                          CREATE_FROM_PLAN: "从计划安排任务",
-                          SOURCE_IMPORT: "来源档案导入",
-                          FILE_IMPORT: "本地文件导入",
-                          UPDATE: "修改记录",
-                          SUBMIT: "提交申请",
-                          ASSIGN: "分配资源",
-                          LINK_PLAN: "关联飞行计划",
-                          START: "开始执行",
-                          FINISH: "提交成果",
-                          ACCEPT: "验收通过",
-                          RETURN: "退回完善",
-                          CANCEL: "取消事项",
-                          APPROVE: "审核通过",
-                          REGISTER_RECEIPT: "登记回执",
-                          VERIFY: "复核通过",
-                          RESOLVE: "登记处置",
-                          ARCHIVE: "完成归档",
-                          DISMISS: "无效线索归档",
-                          REPLY: "登记答复",
-                          COMPLETE: "确认完成",
-                        } as Record<string, string>
-                      )[String(r.action)] ||
-                      r.action ||
-                      "办理记录",
-                  )}
+                  {workflowLabel(r.actionLabel || r.action || "办理记录")}
                 </strong>
-                <p>{String(r.note || r.message || "")}</p>
+                <p>{workflowLabel(r.note || r.message || "")}</p>
                 <small>{String(r.actorName || r.actor || "")}</small>
               </div>
             </li>
