@@ -409,7 +409,7 @@ export default function Algorithms() {
             />
           )}
           <p className="footnote">
-            来源识别记录保留原始时间、设备和类型；需要办理的事项在场景应用中登记并复核。
+            来源识别记录保留原始时间、设备和类型；需要跟进的异常先形成线索，再在场景应用中办理。
           </p>
         </div>
       ) : (

@@ -5,6 +5,8 @@ import com.oneflight.domain.Resource;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ResourceRepository extends JpaRepository<Resource, String> {
+    java.util.List<Resource> findByKindAndSourceDeviceId(String kind, String sourceDeviceId);
+
     @org.springframework.data.jpa.repository.Lock(
             jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @org.springframework.data.jpa.repository.Query("select x from Resource x where x.id = :id")

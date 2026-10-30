@@ -1,6 +1,7 @@
 export type NavigationContext = {
   deviceId?: string;
   taskId?: string;
+  caseId?: string;
   planId?: string;
   resourceKind?: string;
   resourceSearch?: string;

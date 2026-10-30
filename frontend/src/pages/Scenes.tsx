@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   ChevronDown,
@@ -7,22 +7,18 @@ import {
   Plus,
   ScanLine,
 } from "lucide-react";
-import { entityName, useCatalog, useData, useList, write, type Entity } from "../api";
-import { REGIONS } from "../domain";
+import { entityName, useCatalog, useData, useList, type Entity } from "../api";
 import { useUser } from "../context";
 import type { Navigate } from "../navigation";
 import {
   ActionModal,
   History,
   Provenance,
-  useMutationFeedback,
 } from "../components/Workflow";
 import {
   Button,
   Empty,
-  EntityForm,
   ListFooter,
-  Modal,
   SearchBox,
   Select,
   Status,
@@ -55,16 +51,17 @@ function shortCaseId(record: Entity) {
 
 export default function Scenes({
   navigate,
+  initialCaseId,
 }: {
   navigate: Navigate;
+  initialCaseId?: string;
 }) {
   const user = useUser();
   const canHandle = user.role !== "PILOT";
   const [scene, setScene] = useState("森林防火");
   const [search, setSearch] = useState("");
   const [archived, setArchived] = useState(false);
-  const [selected, setSelected] = useState<Entity | null>(null);
-  const [create, setCreate] = useState(false);
+  const [selected, setSelected] = useState<Entity | null>(initialCaseId ? { id: initialCaseId } : null);
   const [action, setAction] = useState("");
   const query = useList("/cases", {
     scene,
@@ -79,11 +76,12 @@ export default function Scenes({
   const disposal = useList("/cases", { scene, status: "PENDING_DISPOSAL", pageSize: 1 });
   const tasks = useList("/tasks");
   const attachments = useCatalog("/attachments");
-  const organizations = useCatalog("/organizations", {}, create && canHandle);
-  const mutate = useMutationFeedback();
   const rows = query.data?.items || [];
   const selectedId = selected?.id || rows[0]?.id;
   const detail = useData<Entity>(`/cases/${selectedId || "none"}`, !!selectedId);
+  useEffect(() => {
+    if (initialCaseId && detail.data?.scene) setScene(String(detail.data.scene));
+  }, [detail.data?.scene, initialCaseId]);
   const current = detail.data || selected || rows[0];
   const linkedTask = useData<Entity>(
     `/tasks/${current?.taskId || "none"}`,
@@ -125,11 +123,6 @@ export default function Scenes({
           </p>
         </div>
         <div className="header-actions">
-          {canHandle && (
-            <Button primary onClick={() => setCreate(true)}>
-              <Plus size={14} />登记线索
-            </Button>
-          )}
           <div className="scene-header-summary">
             <span>未结事项 <strong>{openItems.data?.total ?? "—"}</strong></span>
             <span>已归档 <strong>{archivedItems.data?.total ?? "—"}</strong></span>
@@ -182,11 +175,11 @@ export default function Scenes({
               loading={query.isLoading}
               error={query.error}
               title="当前没有场景事项"
-              description="可登记线索，或等待已授权的业务记录进入场景复核。"
+              description="已授权的待办理线索会显示在这里。"
             />
           )}
           <ListFooter page={query.data} onChange={query.setPage} />
-          <p className="footnote">现场证据、线索办理与飞行任务分别记录并关联</p>
+          <p className="footnote">飞行任务与行业处置分别跟踪</p>
         </aside>
 
         <main className="workspace-detail scene-detail">
@@ -210,7 +203,7 @@ export default function Scenes({
                 <div className="scene-evidence-column">
                   <details className="scene-description" open>
                     <summary>线索说明 <ChevronDown size={13} /></summary>
-                    <p>{String(current.description || "尚未登记线索说明")}</p>
+                    <p>{String(current.description || "暂无线索说明")}</p>
                   </details>
 
                   <CaseEvidence
@@ -241,7 +234,7 @@ export default function Scenes({
                         <ArrowRight size={13} />
                       </button>
                     ) : (
-                      <p>本线索未关联飞行任务。登记线索时可以选择来源任务。</p>
+                      <p>本线索暂未关联飞行任务。</p>
                     )}
                   </section>
                   {linkedTask.error && Boolean(current.taskId) && (
@@ -298,28 +291,6 @@ export default function Scenes({
         </main>
       </div>
 
-      {create && (
-        <Modal title={`登记${scene}线索`} onClose={() => setCreate(false)}>
-          <EntityForm
-            fields={[
-              { key: "title", label: "线索名称", required: true, wide: true },
-              { key: "scene", label: "场景", required: true, options: scenes.map((value) => ({ value, label: value })) },
-              { key: "region", label: "所属区域", required: true, options: REGIONS.map((value) => ({ value, label: value })) },
-              ...(user.role === "ADMIN" || user.role === "DISPATCH" ? [{ key: "organizationId", label: "所属组织", required: true, options: (organizations.data?.items || []).filter((organization) => organization.status === "ACTIVE").map((organization) => ({ value: organization.id, label: entityName(organization) })) }] : []),
-              { key: "taskId", label: "来源任务", options: (tasks.data?.items || []).map((task) => ({ value: task.id, label: entityName(task) })) },
-              { key: "description", label: "线索说明", type: "textarea", required: true, wide: true },
-            ]}
-            initial={{ scene }}
-            onCancel={() => setCreate(false)}
-            submitLabel="登记线索"
-            onSubmit={async (body) => {
-              await mutate(() => write("/cases", body), "行业线索已登记");
-              setCreate(false);
-              setSelected(null);
-            }}
-          />
-        </Modal>
-      )}
       {current && action && (
         <ActionModal
           path={`/cases/${current.id}`}

@@ -67,9 +67,9 @@ export default function Resources({
 }) {
   const user = useUser();
   const manage = ["ADMIN", "DISPATCH"].includes(user.role);
+  const canMarkMediaClue = ["ADMIN", "DISPATCH", "DEPARTMENT"].includes(user.role);
   const [kind, setKind] = useState(initialKind || "DEVICE");
   const [remote, setRemote] = useState(true);
-  const [sourceMedia, setSourceMedia] = useState(false);
   const [deviceType, setDeviceType] = useState("");
   const [statisticsOnly, setStatisticsOnly] = useState("");
   const [flightDeviceId, setFlightDeviceId] = useState("");
@@ -148,11 +148,10 @@ export default function Resources({
     { deviceId: flightDeviceId || undefined, pageSize: 20 },
     kind === "FLIGHT",
   );
-  const files = useList("/attachments", {}, kind === "MEDIA" && sourceMedia);
   const mediaCatalog = useCatalog(
     "/attachments",
     {},
-    kind === "MEDIA" && !sourceMedia,
+    kind === "MEDIA",
   );
   const weather = useData<WeatherOverview>(
     "/weather/observations",
@@ -169,7 +168,7 @@ export default function Resources({
     kind === "FLIGHT"
       ? flights
       : kind === "MEDIA"
-        ? files
+        ? mediaCatalog
         : remote && kind === "DEVICE"
           ? source
           : local;
@@ -177,7 +176,6 @@ export default function Resources({
   const rows = (query.data?.items || []).filter(
     (r) =>
       (kind !== "FLIGHT" && kind !== "MEDIA") ||
-      (kind === "MEDIA" && !sourceMedia) ||
       !search ||
       [entityName(r), r.id, r.deviceId, r.sortieNo, r.fileName].some((v) =>
         String(v ?? "")
@@ -225,6 +223,23 @@ export default function Resources({
       await mediaCatalog.refetch();
     } catch (cause) {
       setMediaReviewError(cause instanceof Error ? cause.message : "成果归档失败");
+    }
+  }
+
+  async function markSelectedMediaAsClue() {
+    if (!selected || selected.entityType !== "TASK") return;
+    setMediaReviewError("");
+    try {
+      const result = await mutate(
+        () => write(`/attachments/${encodeURIComponent(selected.id)}/clue`, {}),
+        "疑似线索已生成，正在打开场景应用",
+      );
+      const createdCase = result as Entity;
+      setSelected({ ...selected, caseId: createdCase.id, clueCandidate: true });
+      await mediaCatalog.refetch();
+      navigate?.("scenes", { caseId: String(createdCase.id) });
+    } catch (cause) {
+      setMediaReviewError(cause instanceof Error ? cause.message : "形成场景线索失败");
     }
   }
 
@@ -317,7 +332,7 @@ export default function Resources({
           />
         ) : (
         <div className="resource-main">
-          {!(kind === "MEDIA" && !sourceMedia) && <div className="table-toolbar">
+          {kind !== "MEDIA" && <div className="table-toolbar">
             <div>
               <h2>{kinds[kind]}</h2>
               <p>
@@ -518,31 +533,15 @@ export default function Resources({
               </div>
             </section>
           )}
-          {kind === "MEDIA" && manage && (
-            <div className="segmented">
-              <button
-                className={!sourceMedia ? "active" : ""}
-                onClick={() => setSourceMedia(false)}
-              >
-                成果档案
-              </button>
-              <button
-                className={sourceMedia ? "active" : ""}
-                onClick={() => setSourceMedia(true)}
-              >
-                来源媒体
-              </button>
-            </div>
-          )}
-          {kind === "MEDIA" && !sourceMedia ? (
+          {kind === "MEDIA" ? (
             <MediaAssets
               rows={mediaCatalog.data?.items || []}
               loading={mediaCatalog.isLoading}
               error={mediaCatalog.error}
               total={mediaCatalog.data?.total || 0}
+              navigate={navigate}
               search={search}
               onSearchChange={setSearch}
-              onSourceMedia={() => setSourceMedia(true)}
               onOpen={(asset) => {
                 setSelected(asset);
                 setPreviewFailed(false);
@@ -564,8 +563,6 @@ export default function Resources({
                   : undefined
               }
             />
-          ) : kind === "MEDIA" && sourceMedia ? (
-            <SourceRecords kind="media" />
           ) : (
             <>
               <DataTable
@@ -596,7 +593,12 @@ export default function Resources({
                 }
                 columns={resourceColumns(kind, remote, dispatchStatus)}
               />
-              <ListFooter page={query.data} onChange={query.setPage} />
+              <ListFooter
+                page={query.data}
+                onChange={(page) => {
+                  (query as { setPage?: (value: number) => void }).setPage?.(page);
+                }}
+              />
             </>
           )}
           {kind === "FLIGHT" && (
@@ -787,6 +789,7 @@ export default function Resources({
               items={[
                 { label: "关联任务或线索", value: selected.shared ? "共享成果" : String(selected.entityTitle || "—") },
                 { label: "采集来源", value: selected.shared ? "共享成果" : selected.entityType === "TASK" ? "任务成果" : "线索证据" },
+                { label: "场景线索", value: selected.caseId ? "已关联待办理线索" : "尚未标记" },
                 { label: "所属区域", value: String(selected.region || "—") },
                 { label: "成果类型", value: String(selected.contentType || "未知") },
                 { label: "采集时间", value: dateTime(selected.createdAt) },
@@ -947,6 +950,20 @@ export default function Resources({
               >
                 下载文件
               </a>
+              {canMarkMediaClue && selected.entityType === "TASK" && !selected.shared && (
+                <div className="media-clue-actions">
+                  {mediaReviewError && <p className="form-error" role="alert">{mediaReviewError}</p>}
+                  {selected.caseId ? (
+                    <Button primary onClick={() => navigate?.("scenes", { caseId: String(selected.caseId) })}>
+                      查看场景线索 <ArrowRight size={13} />
+                    </Button>
+                  ) : (
+                    <Button primary onClick={() => void markSelectedMediaAsClue()}>
+                      标记为疑似线索并进入场景应用 <ArrowRight size={13} />
+                    </Button>
+                  )}
+                </div>
+              )}
               {manage && !selected.shared && (
                 <div className="media-review-actions">
                   {mediaReviewError && <p className="form-error" role="alert">{mediaReviewError}</p>}

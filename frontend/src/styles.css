@@ -843,6 +843,16 @@ tr.clickable:hover {
   display: block;
   margin-top: 4px;
 }
+.task-flight-photos { margin-top: 14px; }
+.task-flight-photos > .section-title { margin-bottom: 8px; }
+.task-flight-photos h4 { margin: 0; font-size: 12px; }
+.task-flight-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 8px; }
+.task-flight-photo { min-width: 0; overflow: hidden; border: 1px solid #3a5164; border-radius: 5px; color: #b4d0e9; background: #182b39; text-decoration: none; }
+.task-flight-photo img { display: block; width: 100%; height: 104px; object-fit: cover; background: #0c1721; }
+.task-flight-photo span { display: grid; gap: 4px; padding: 7px; }
+.task-flight-photo strong, .task-flight-photo small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-flight-photo strong { font-size: 10px; font-weight: 500; }
+.task-flight-photo small { color: #9fb4c6; font-size: 9px; }
 .unavailable {
   display: flex;
   align-items: flex-start;

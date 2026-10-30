@@ -68,7 +68,9 @@ docs/                          架构、接入、部署及验收说明
 
 任务调度页在 `frontend/src/pages/tasks` 管理专属样式与月历、资源周排期和资源日排期。日期和时间按 Asia/Shanghai 展示；排期使用当前授权可见的任务及设备档案，未分配任务与不可见设备任务单独提示，不补造资源或时段。
 
-场景应用页面及其现场证据预览样式放在 `frontend/src/pages/scenes`。线索使用独立的复核、移交、处置、复查、归档状态流；场景上传通过现有附件接口绑定 `caseId`，数据成果页使用统一附件目录展示。场景到数据成果的快捷入口通过导航上下文指定媒体目录和线索关键词，保留搜索由附件档案关联字段匹配。
+数据成果媒体视图由 `pages/resources/MediaAssets.tsx` 编排；牍术照片的设备/时间筛选、任务匹配、同源预览和明确线索操作在同目录的 `SourceFlightPhotos.tsx`。场景页的 `CaseEvidence.tsx` 只读取已关联的照片引用。后端 `integration/GatewaySourceFlightPhotoProvider` 只允许 `platformCapturePost` 照片列表读取及固定来源图片路径；来源完整路径可通过 `SOURCE_FLIGHT_PHOTO_PATH` 配置，来源令牌只由后端持有。照片联调使用 `SOURCE_LIVE_VERIFY=false` 的合成用例；上线前另行只读确认来源主机、路径及图片可达性。
+
+场景应用页面及其现场证据预览样式放在 `frontend/src/pages/scenes`。页面只展示并办理已登记线索，不提供线索登记入口；线索使用独立的复核、移交、处置、复查、归档状态流。数据成果详情将任务附件标记为疑似线索后，通过附件服务幂等创建待复核案件并关联同一附件；附件仍保留任务归属。场景上传通过现有附件接口绑定 `caseId`，数据成果页使用统一附件目录展示。场景与数据成果间的快捷入口通过导航上下文携带案件或资源筛选信息。
 
 ## Java 实现规范
 

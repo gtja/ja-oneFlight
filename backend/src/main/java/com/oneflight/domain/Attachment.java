@@ -27,6 +27,9 @@ public class Attachment {
     @Column(nullable = false, length = 30)
     public String entityType;
 
+    @Column(name = "case_id", length = 36)
+    public String caseId;
+
     @Column(nullable = false, length = 255)
     public String filename;
 
@@ -63,7 +66,8 @@ public class Attachment {
         fields.put("fileName", filename);
         fields.put("title", filename);
         fields.put("taskId", "TASK".equals(entityType) ? entityId : null);
-        fields.put("caseId", "CASE".equals(entityType) ? entityId : null);
+        fields.put("caseId", "CASE".equals(entityType) ? entityId : caseId);
+        fields.put("clueCandidate", "CASE".equals(entityType) || caseId != null);
         fields.put("contentType", contentType);
         fields.put("size", size);
         fields.put("createdAt", createdAt);

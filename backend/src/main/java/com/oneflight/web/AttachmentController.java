@@ -26,6 +26,7 @@ public class AttachmentController {
     private final ScopeService scope;
     private final AuditService audit;
     private final AttachmentResourceService attachmentResources;
+    private final AttachmentClueService attachmentClues;
     private final Path directory;
 
     public AttachmentController(
@@ -34,12 +35,14 @@ public class AttachmentController {
             ScopeService scope,
             AuditService audit,
             AttachmentResourceService attachmentResources,
+            AttachmentClueService attachmentClues,
             @Value("${oneflight.upload-directory:./data/uploads}") String directory) {
         this.attachments = attachments;
         this.service = service;
         this.scope = scope;
         this.audit = audit;
         this.attachmentResources = attachmentResources;
+        this.attachmentClues = attachmentClues;
         this.directory = Path.of(directory).toAbsolutePath().normalize();
     }
 
@@ -51,6 +54,21 @@ public class AttachmentController {
 
     private BaseRecord invalid() {
         throw ApiException.invalid("附件须关联任务或线索");
+    }
+
+    private BaseRecord attachmentContext(Attachment attachment) {
+        try {
+            return linked(attachment.entityType, attachment.entityId);
+        } catch (ApiException parentError) {
+            if (attachment.caseId != null && !attachment.caseId.isBlank()) {
+                try {
+                    return linked("CASE", attachment.caseId);
+                } catch (ApiException ignored) {
+                    // Keep the original parent failure when the linked case is not visible either.
+                }
+            }
+            throw parentError;
+        }
     }
 
     @GetMapping
@@ -67,7 +85,7 @@ public class AttachmentController {
             List<Map<String, Object>> visible = attachments.findAll().stream()
                     .map(attachment -> {
                         try {
-                            BaseRecord record = linked(attachment.entityType, attachment.entityId);
+                            BaseRecord record = attachmentContext(attachment);
                             return attachmentView(attachment, record, false, null);
                         } catch (ApiException e) {
                             AttachmentShareRequest grant = grants.get(attachment.id);
@@ -80,16 +98,35 @@ public class AttachmentController {
                     .toList();
             return ApiResponse.ok(PageResult.of(visible, page, pageSize));
         }
+        if (caseId != null && taskId == null) {
+            BaseRecord caseRecord = linked("CASE", id);
+            Map<String, Attachment> related = new LinkedHashMap<>();
+            attachments.findByEntityIdAndEntityType(id, "CASE")
+                    .forEach(attachment -> related.put(attachment.id, attachment));
+            attachments.findByCaseId(id)
+                    .forEach(attachment -> related.put(attachment.id, attachment));
+            return ApiResponse.ok(PageResult.of(
+                    related.values().stream()
+                            .map(attachment -> attachmentView(attachment, caseRecord, false, null))
+                            .toList(),
+                    page,
+                    pageSize));
+        }
         linked(type, id);
         return ApiResponse.ok(
                 PageResult.of(
-                        attachments.findByEntityId(id).stream()
+                        attachments.findByEntityIdAndEntityType(id, type).stream()
                                 .filter(x -> type.equals(x.entityType))
                                 .map(attachment -> attachmentView(
                                         attachment, linked(attachment.entityType, attachment.entityId), false, null))
                                 .toList(),
                         page,
                         pageSize));
+    }
+
+    @PostMapping("/{id}/clue")
+    public ApiResponse<?> markAsClue(@PathVariable String id) {
+        return ApiResponse.ok(attachmentClues.markAsClue(id).view());
     }
 
     @PostMapping
@@ -217,7 +254,7 @@ public class AttachmentController {
 
     private void requireAttachmentAccess(Attachment attachment) {
         try {
-            linked(attachment.entityType, attachment.entityId);
+            attachmentContext(attachment);
         } catch (ApiException e) {
             if (!attachmentResources.canReadShared(attachment)) throw e;
         }

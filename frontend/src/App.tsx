@@ -165,6 +165,7 @@ export default function App() {
     const next: Record<string, string> = { view: v };
     if (context.deviceId) next.deviceId = context.deviceId;
     if (context.taskId) next.taskId = context.taskId;
+    if (context.caseId) next.caseId = context.caseId;
     if (context.planId) next.planId = context.planId;
     if (context.resourceKind) next.resourceKind = context.resourceKind;
     if (context.resourceSearch) next.resourceSearch = context.resourceSearch;
@@ -400,7 +401,7 @@ export default function App() {
             ) : view === "algorithms" ? (
               <Algorithms />
             ) : (
-            <Scenes navigate={navigate} />
+            <Scenes navigate={navigate} initialCaseId={params.get("caseId") || undefined} />
             )}
           </main>
           {settings && (

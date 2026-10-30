@@ -11,9 +11,15 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TaskRepository extends JpaRepository<Task, String> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select x from Task x where x.id = :id")
+    Optional<Task> findLockedById(@org.springframework.data.repository.query.Param("id") String id);
+
     List<Task> findByPlanIdAndPilotId(String planId, String pilotId);
 
     List<Task> findByPlanId(String planId);
+
+    List<Task> findByDeviceIdAndStatusNot(String deviceId, String status);
 
     Optional<Task> findByPlanCreationPlanIdAndPlanCreationRequestId(String planId, String requestId);
 

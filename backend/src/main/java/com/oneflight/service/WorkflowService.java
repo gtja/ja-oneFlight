@@ -628,6 +628,29 @@ public class WorkflowService {
         return c;
     }
 
+    public IndustryCase createCaseFromDataResult(String taskId, String filename) {
+        scope.requireRole(Role.ADMIN, Role.DISPATCH, Role.DEPARTMENT);
+        Task sourceTask = get(tasks, taskId);
+        if ("CANCELLED".equals(sourceTask.status))
+            throw ApiException.invalid("已取消任务的成果不能形成场景线索");
+        if (sourceTask.scene == null || sourceTask.scene.isBlank()
+                || sourceTask.region == null || sourceTask.region.isBlank())
+            throw ApiException.invalid("来源任务缺少场景或区域，不能形成场景线索");
+        String baseName = filename == null ? "" : filename.trim().replaceFirst("\\.[^.]+$", "");
+        if (baseName.isBlank()) baseName = sourceTask.title;
+        String title = baseName + "疑似线索复核";
+        if (title.length() > 180) title = title.substring(0, 180);
+
+        IndustryCase industryCase = new IndustryCase();
+        initialize(industryCase, title, sourceTask.region, sourceTask.organizationId, "PENDING_REVIEW");
+        industryCase.scene = sourceTask.scene;
+        industryCase.description = "数据成果《" + filename + "》被标记为疑似线索，待人工复核。";
+        industryCase.taskId = sourceTask.id;
+        IndustryCase saved = cases.saveAndFlush(industryCase);
+        audit.record("CASE", saved, "CLUE_FROM_DATA_RESULT", "数据成果形成疑似线索，等待人工复核");
+        return saved;
+    }
+
     public IndustryCase caseAction(String id, ActionInput a) {
         scope.requireRole(Role.ADMIN, Role.DISPATCH, Role.DEPARTMENT);
         IndustryCase c = get(cases, id);

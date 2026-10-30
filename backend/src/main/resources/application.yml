@@ -57,6 +57,7 @@ oneflight:
     gateway-origin: ${SOURCE_GATEWAY_ORIGIN:https://dushu.jing-an.com:32716}
     gateway-system: ${SOURCE_GATEWAY_SYSTEM:jingqi}
     target-host: ${SOURCE_TARGET_HOST:47.96.225.165:32716}
+    flight-photo-path: ${SOURCE_FLIGHT_PHOTO_PATH:/DBApiServer/api/platformCapturePost}
     token: ${SOURCE_TOKEN:}
     username: ${SOURCE_USERNAME:}
     dushu-jdbc-url: ${SOURCE_DUSHU_JDBC_URL:}

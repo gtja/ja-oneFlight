@@ -1,0 +1,38 @@
+CREATE TABLE source_media_link (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  version BIGINT NOT NULL,
+  title VARCHAR(180) NOT NULL,
+  status VARCHAR(40) NOT NULL,
+  region VARCHAR(80),
+  organization_id VARCHAR(36) NOT NULL,
+  created_at TIMESTAMP(6) NOT NULL,
+  updated_at TIMESTAMP(6) NOT NULL,
+  created_by VARCHAR(36),
+  provenance TEXT,
+  source_system VARCHAR(40) NOT NULL,
+  source_media_id VARCHAR(180) NOT NULL,
+  source_device_id VARCHAR(180) NOT NULL,
+  source_action_id VARCHAR(180),
+  source_action_item_id VARCHAR(180),
+  source_record_id VARCHAR(80),
+  source_bid VARCHAR(180),
+  source_name TEXT,
+  source_media_type VARCHAR(80),
+  photo_type VARCHAR(80),
+  source_path TEXT NOT NULL,
+  captured_from TIMESTAMP(6),
+  captured_to TIMESTAMP(6),
+  longitude DOUBLE,
+  latitude DOUBLE,
+  source_height DOUBLE,
+  task_id VARCHAR(36),
+  case_id VARCHAR(36),
+  linked_by VARCHAR(36),
+  linked_at TIMESTAMP(6),
+  CONSTRAINT uk_source_media_identity UNIQUE (source_system, source_device_id, source_media_id),
+  CONSTRAINT fk_source_media_task FOREIGN KEY (task_id) REFERENCES flight_task (id),
+  CONSTRAINT fk_source_media_case FOREIGN KEY (case_id) REFERENCES industry_case (id)
+);
+
+CREATE INDEX ix_source_media_task ON source_media_link (task_id);
+CREATE INDEX ix_source_media_case ON source_media_link (case_id);

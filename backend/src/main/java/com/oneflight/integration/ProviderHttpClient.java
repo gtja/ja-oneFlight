@@ -1,6 +1,7 @@
 package com.oneflight.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ProviderHttpClient {
     private static final int RESPONSE_LIMIT = 2 * 1024 * 1024;
+    private static final int IMAGE_RESPONSE_LIMIT = 20 * 1024 * 1024;
     private final SourceProperties properties;
     private final HttpClient http;
     public ProviderHttpClient(SourceProperties properties) {
@@ -28,8 +30,39 @@ public class ProviderHttpClient {
         }
         String base = properties.gatewayOrigin() + "/proxyApi/otherService/"
                 + properties.gatewaySystem() + "/controlServer";
-        return read(base + path, body, Map.of("Authorization", "Bearer " + properties.token(),
-                "_origin_target_host", properties.targetHost(), "Accept-Language", "zh"));
+        return read(base + path, body, gatewayHeaders());
+    }
+    /** Fixed read-only photo index operation. It intentionally accepts success/data, not controlServer envelopes. */
+    public JsonNode flightPhotos(String path, Map<String, Object> body) {
+        if (!properties.gatewayConfigured()) { throw ProviderJson.failure("设备来源账号尚未配置"); }
+        if (path == null || !path.matches("/DBApiServer/(?:[A-Za-z0-9_-]+/)*platformCapturePost")) {
+            throw new IllegalArgumentException("Unsupported flight photo provider operation");
+        }
+        String base = properties.gatewayOrigin() + "/proxyApi/otherService/"
+                + properties.gatewaySystem();
+        try {
+            byte[] response = request(base + path, body, gatewayHeaders(), "application/json", RESPONSE_LIMIT);
+            JsonNode json = ProviderJson.JSON.readTree(response);
+            if (json == null || !json.isObject()) throw ProviderJson.failure("牍术照片目录格式无效");
+            return json;
+        } catch (com.oneflight.common.ApiException e) {
+            throw e;
+        } catch (IOException e) {
+            throw ProviderJson.failure("牍术照片目录格式无效");
+        }
+    }
+    /** Fetches only an already-validated relative image path from the fixed source origin. */
+    public byte[] sourceImage(String relativePath) {
+        if (!properties.gatewayConfigured()) { throw ProviderJson.failure("设备来源账号尚未配置"); }
+        String safePath = SourceFlightPhotoParser.safeSourcePath(relativePath);
+        if (safePath == null) throw com.oneflight.common.ApiException.invalid("来源照片路径无效");
+        String origin = properties.gatewayOrigin();
+        String providerHost = properties.targetHost();
+        Map<String, String> headers = Map.of(
+                "Authorization", "Bearer " + properties.token(),
+                "_origin_target_host", providerHost,
+                "Accept", "image/jpeg,image/png,image/webp,image/gif");
+        return request(origin + safePath, null, headers, "image/*", IMAGE_RESPONSE_LIMIT);
     }
     /** Personal entry authorization never borrows the configured service account's device grants. */
     public JsonNode personalDeviceTree(String token) {
@@ -54,8 +87,19 @@ public class ProviderHttpClient {
     }
     private JsonNode read(String url, Map<String, Object> body, Map<String, String> headers) {
         try {
+            return ProviderJson.envelope(new String(request(url, body, headers, "application/json", RESPONSE_LIMIT), StandardCharsets.UTF_8));
+        } catch (com.oneflight.common.ApiException e) { throw e; }
+        catch (Exception e) { throw ProviderJson.failure("来源连接失败或读取超时"); }
+    }
+    private Map<String, String> gatewayHeaders() {
+        return Map.of("Authorization", "Bearer " + properties.token(),
+                "_origin_target_host", properties.targetHost(), "Accept-Language", "zh");
+    }
+    private byte[] request(String url, Map<String, Object> body, Map<String, String> headers,
+            String accept, int responseLimit) {
+        try {
             HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(properties.timeoutSeconds())).header("Accept", "application/json");
+                    .timeout(Duration.ofSeconds(properties.timeoutSeconds())).header("Accept", accept);
             headers.forEach(request::header);
             if (body == null) { request.GET(); }
             else {
@@ -63,7 +107,7 @@ public class ProviderHttpClient {
                 request.POST(HttpRequest.BodyPublishers.ofString(ProviderJson.JSON.writeValueAsString(body), StandardCharsets.UTF_8));
             }
             java.util.concurrent.CompletableFuture<HttpResponse<byte[]>> pending = http.sendAsync(
-                    request.build(), info -> new LimitedBodySubscriber(RESPONSE_LIMIT));
+                    request.build(), info -> new LimitedBodySubscriber(responseLimit));
             HttpResponse<byte[]> response;
             try {
                 response = pending.get(properties.timeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS);
@@ -72,7 +116,7 @@ public class ProviderHttpClient {
                 throw e;
             }
             if (response.statusCode() != 200) { throw ProviderJson.failure("来源服务响应异常或账号已失效"); }
-            return ProviderJson.envelope(new String(response.body(), StandardCharsets.UTF_8));
+            return response.body();
         } catch (com.oneflight.common.ApiException e) { throw e; }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt(); throw ProviderJson.failure("来源读取被中断");

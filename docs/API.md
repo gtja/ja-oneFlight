@@ -69,9 +69,11 @@
 
 ## 场景线索与成果归档
 
-线索通过 `/api/v1/cases` 登记，状态按 `PENDING_REVIEW → PENDING_TRANSFER → PENDING_DISPOSAL → RESOLVED → ARCHIVED` 推进：`VERIFY` 必须填写复核结论，`TRANSFER` 记录移交并进入现场处置，`RESOLVE` 必须填写处置结论，`ARCHIVE` 完成复查归档；复核认定无效可用 `DISMISS` 直接归档。历史 `PENDING_DISPOSAL` 线索仍可继续处置，历史 `RESOLVED` 线索仍可执行 `ARCHIVE`。登记来源任务时，任务和线索必须属于同一组织及区域。
+线索可通过 `/api/v1/cases` 登记；场景应用页面只展示和办理已登记线索，不提供线索登记入口。数据成果详情提供“标记为疑似线索”操作：`POST /api/v1/attachments/{id}/clue` 仅接受任务成果，管理员、调度员和部门人员可操作。系统从来源任务继承场景、组织、区域和任务关联，创建 `PENDING_REVIEW` 线索，并把同一附件关联为场景证据；附件仍保留任务成果归属，因而仍显示在数据成果中。重复请求返回已有线索，不重复建案。该标记是明确的人工触发，不会把所有成果自动转成线索。
 
-场景线索附件通过 `POST /api/v1/attachments` 的 `caseId` 上传，任务附件使用 `taskId`。`GET /api/v1/attachments` 汇总当前账号可访问的任务成果、线索证据及明确授权的共享文件，因此场景中上传的证据会自动出现在“资源管理 → 数据成果”；同一附件的质检、归档和共享状态也在两处一致。附件本身有各自的质检与归档状态，线索归档不会代替文件质检或删除附件。来源识别观测与本地线索分别保存，只有显式可追溯的关联才能作为本案识别记录，不按设备或时间自动推断。
+线索状态按 `PENDING_REVIEW → PENDING_TRANSFER → PENDING_DISPOSAL → RESOLVED → ARCHIVED` 推进：`VERIFY` 必须填写复核结论，`TRANSFER` 记录移交并进入现场处置，`RESOLVE` 必须填写处置结论，`ARCHIVE` 完成复查归档；复核认定无效可用 `DISMISS` 直接归档。历史 `PENDING_DISPOSAL` 线索仍可继续处置，历史 `RESOLVED` 线索仍可执行 `ARCHIVE`。登记来源任务时，任务和线索必须属于同一组织及区域。
+
+场景线索附件通过 `POST /api/v1/attachments` 的 `caseId` 上传，任务附件使用 `taskId`。`GET /api/v1/attachments?caseId=...` 会返回该线索的直接证据以及通过疑似线索标记关联的任务成果；`GET /api/v1/attachments` 汇总当前账号可访问的任务成果、线索证据及明确授权的共享文件，因此场景中上传的证据也会出现在“资源管理 → 数据成果”。同一附件的质检、归档和共享状态也在两处一致。附件本身有各自的质检与归档状态，线索归档不会代替文件质检或删除附件。来源识别观测与本地线索分别保存，只有显式可追溯的关联才能作为本案识别记录，不按设备或时间自动推断。
 
 ## 时间、上传和列表
 
@@ -112,3 +114,16 @@
 - `POST /api/v1/source-data/import`：仅管理员，`{kinds:["DEVICE","PERSON","ROUTE","AIRSPACE","ORGANIZATION"],limitPerKind:2000}`。按稳定来源键幂等归档，不创建来源人员的登录账号。导入资源默认为 `PENDING_CONFIRMATION`，保留来源组织、原始状态和时间。
 - 任务、计划、线索、咨询及本地账号可由管理员在首次登记时传 `provenance:{origin:"BUSINESS_INITIALIZATION",key:"稳定业务键",description:"来源说明"}`。服务器记录实际登记时间与操作者；已登记来源不可覆盖，普通请求不能伪造 `SOURCE_IMPORTED`。
 - 资源通过 `metadata.provenance`登记同样信息。`ALGORITHM_DATASET`仅允许 `PENDING_LABELING`，`ALGORITHM_TRAINING`仅允许 `PENDING_CONFIGURATION`；这些是本地准备事项，训练计算与发布命令仍返回未配置。
+
+## 牍术飞行照片
+
+照片由只读 `platformCapturePost` 提供，平台不复制图片文件。服务端通过固定的 `gateway-origin/gateway-system` 和后端 `SOURCE_TOKEN` 请求 `SOURCE_FLIGHT_PHOTO_PATH`（默认 `/DBApiServer/api/platformCapturePost`）；请求体为 `{deviceId,type:"PICTURE",sourceId:"ALL",startTime,endTime,page,pageSize}`。时间采用 `Asia/Shanghai` 的 `yyyy-MM-dd HH:mm:ss` 格式，按来源页面契约每页9条读取，单次查询最多31天、最多900条。来源媒体、设备、行动和子行动编号都按字符串保留；来源 `actionId` 不作为本地任务 ID。
+
+- `GET /api/v1/source-data/flight-photos?deviceId=...&from=...&to=...&page=1&pageSize=100`：按来源设备和时间查询当前账号可访问照片。设备必须映射到本地设备档案并通过当前来源设备授权检查。仅当来源设备与任务分配设备一致，且拍摄时间与任务计划 `startAt/endAt` 唯一匹配时标记 `AUTO_MATCHED`；无候选或多候选标记 `NEEDS_ASSOCIATION`，用户可选择同设备的可见任务。匹配不使用任务创建时间或 `START/FINISH` 办理状态。
+- `GET /api/v1/source-data/flight-photos/tasks?taskId=...`：查看任务内自动匹配或已明确关联的照片。
+- `POST /api/v1/source-data/flight-photos/associate`：人工关联，JSON `{deviceId,sourceMediaId,taskId}`。后端重新校验当前会话、设备授权、任务可见性及任务分配设备一致性。
+- `POST /api/v1/source-data/flight-photos/clues`：明确标记疑似线索，JSON `{deviceId,sourceMediaId,taskId?}`。省略任务时只接受唯一候选；创建的待复核线索继承任务场景、组织、区域及任务关系，并持久保存外部照片引用。重复提交返回已关联线索，不复制来源照片。
+- `GET /api/v1/source-data/flight-photos/cases?caseId=...`：在场景应用加载已关联该线索的来源照片。
+- `GET /api/v1/source-data/flight-photos/preview?deviceId=...&sourceMediaId=...&caseId=...`：本平台同源预览接口。后端只从固定来源读取 `/ja-media-storage/` 下的相对路径，拒绝外部 URL、查询参数、路径穿越及非图片响应；浏览器不会收到来源令牌。
+
+“资源管理 → 数据成果”将“本地任务成果”与“牍术飞行照片”分组展示。照片详情可进入关联任务；用户明确标记后才进入场景应用复核。场景证据区也显示已关联的来源照片及拍摄信息。来源照片不参加本地附件的质检、归档或共享；本地附件已有行为继续生效。所有写操作沿用当前会话、CSRF 和任务/设备/组织/区域权限检查。

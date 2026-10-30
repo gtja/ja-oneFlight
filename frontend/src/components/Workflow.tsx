@@ -10,6 +10,7 @@ const workflowLabels: Record<string, string> = {
   CREATE: "创建记录",
   INITIALIZE: "初始化登记",
   CREATE_FROM_PLAN: "从计划安排任务",
+  CLUE_FROM_DATA_RESULT: "数据成果形成疑似线索",
   SOURCE_IMPORT: "来源档案导入",
   FILE_IMPORT: "本地文件导入",
   UPDATE: "修改记录",
@@ -142,6 +143,7 @@ export function Attachments({
   readOnly?: boolean;
 }) {
   const query = useList("/attachments", { taskId, caseId });
+  const flightPhotos = useList("/source-data/flight-photos/tasks", { taskId }, !!taskId);
   const mutate = useMutationFeedback();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -209,7 +211,25 @@ export function Attachments({
           </a>
         ))}
       </div>
-      {!query.data?.items.length && (
+      {!!taskId && (
+        <div className="task-flight-photos" aria-label="牍术飞行照片">
+          <div className="section-title"><h4>牍术飞行照片</h4><span>{flightPhotos.data?.total ?? 0} 张</span></div>
+          {flightPhotos.error && <p className="form-error" role="alert">飞行照片读取失败：{flightPhotos.error.message}</p>}
+          {flightPhotos.data?.items.length ? (
+            <div className="task-flight-photo-grid">
+              {flightPhotos.data.items.map((photo) => (
+                <a className="task-flight-photo" key={photo.id} href={String(photo.previewUrl)} target="_blank" rel="noreferrer">
+                  <img src={String(photo.previewUrl)} alt={String(photo.title || "牍术飞行照片")} loading="lazy" />
+                  <span><strong>{String(photo.title || "牍术飞行照片")}</strong><small>{dateTime(photo.capturedFrom, true)} · {String(photo.photoType || "照片")}</small></span>
+                </a>
+              ))}
+            </div>
+          ) : !flightPhotos.isLoading && !flightPhotos.error ? (
+            <p className="muted">当前任务计划时段内暂无已匹配照片。</p>
+          ) : null}
+        </div>
+      )}
+      {!query.data?.items.length && !taskId && (
         <Empty
           loading={query.isLoading}
           error={query.error}
